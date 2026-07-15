@@ -313,16 +313,30 @@ public class AustraliaVariantTests
         // Linked events — a consequence needs its cause to have fired:
         Assert.Contains("event.merinoSheep", Australia.HistoricalEvent("event.woolBoom")!.RequiredEvents);          // no flock, no wool boom
         Assert.Contains("event.marvellousMelbourne", Australia.HistoricalEvent("event.bankCrash")!.RequiredEvents); // the 1893 crash needs the land boom
-        foreach (string goldConsequence in new[] { "event.payableField", "event.goldImmigrationSurge", "event.eurekaStockade" })
+        Assert.Contains("event.firstRailwayAndTelegraph", Australia.HistoricalEvent("event.intercolonialRailway")!.RequiredEvents); // trunk extensions build on the first line
+        foreach (string goldConsequence in new[] { "event.payableField", "event.goldImmigrationSurge", "event.eurekaStockade", "event.goldEscortRobbery" })
         {
-            Assert.Contains("event.goldRush", Australia.HistoricalEvent(goldConsequence)!.RequiredEvents);          // gold consequences need the Gold Rush
+            Assert.Contains("event.goldRush", Australia.HistoricalEvent(goldConsequence)!.RequiredEvents);          // gold consequences (incl. escort robberies) need the Gold Rush
         }
-        // Figure prerequisite — a Historical Figure's linked event hook (the Overland Telegraph was Charles Todd's project):
-        Assert.Contains("model.foundingFather.charlesTodd", Australia.HistoricalEvent("event.overlandTelegraph")!.RequiredFathers);
+        // Figure prerequisites — a Historical Figure's linked event hook: the project needs its champion attained.
+        Assert.Contains("model.foundingFather.charlesTodd", Australia.HistoricalEvent("event.overlandTelegraph")!.RequiredFathers);         // the Overland Telegraph was Charles Todd's
+        Assert.Contains("model.foundingFather.thomasSutcliffeMort", Australia.HistoricalEvent("event.refrigeratedMeat")!.RequiredFathers);  // refrigerated-meat export was Thomas Mort's
+        Assert.Contains("model.foundingFather.catherineHelenSpence", Australia.HistoricalEvent("event.womensSuffrageSA")!.RequiredFathers); // SA women's suffrage was carried by Spence
 
         // The conditionality is targeted, not blanket — most events stay calendar/era-driven (a handful carry prerequisites).
         int gated = Australia.HistoricalEvents.Count(e => e.RequiredEvents.Count > 0 || e.RequiredFathers.Count > 0);
-        Assert.InRange(gated, 5, Australia.HistoricalEvents.Count - 1);
+        Assert.InRange(gated, 8, Australia.HistoricalEvents.Count - 1);
+
+        // Every <father> prerequisite resolves to a real Historical Figure (full-id or dotted-suffix match, as the
+        // eligibility check does). The parser guards required-*events* (see Parser_RejectsARequiredEventThatDoesNotExist)
+        // but NOT required-*fathers* — a typo'd father id would silently make its event never fire — so lock the figure
+        // gates to actual fathers here.
+        foreach (EventDef e in Australia.HistoricalEvents)
+        {
+            Assert.All(e.RequiredFathers, reqF => Assert.Contains(
+                Australia.FoundingFathers,
+                f => f.Id == reqF || f.Id.EndsWith("." + reqF, System.StringComparison.Ordinal)));
+        }
 
         // Every linked-event reference on the shipped spec resolves to a real catalogue event (the parser also guards this).
         System.Collections.Generic.HashSet<string> ids = Australia.HistoricalEvents.Select(e => e.Id).ToHashSet();

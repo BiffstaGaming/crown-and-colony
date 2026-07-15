@@ -19,6 +19,22 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-15 — WS4.2 deeper event causality + roadmap ground-truth audit
+
+**Requested (Chris):** "Determine the next development work to be done on this project and begin."
+**Did:**
+- **Audited the true state first** (3 parallel read-only agents across all six workstreams) because `ROAD_TO_100.md` + the ClickUp kanban proved **badly stale** — 5+ items they list as "to-do" are already shipped (WS1.1/1.2/1.3/1.5, WS3.1/3.2/3.5/3.6/3.7/3.8, WS4.2's first six event-links, WS2.7 UI polish). I nearly re-built several before verifying. Recorded the verified done-vs-todo map (roadmap §1 status note).
+- **Shipped a clean WS4.2 slice — four more historically-faithful, non-sensitive event prerequisites** (pure data on the proven `RequiredFathers`/`RequiredEvents` gates; no engine/save change): figure-gates `refrigeratedMeat`←Thomas **Mort** (refrigeration pioneer) + `womensSuffrageSA`←Catherine Helen **Spence** (SA suffragist); linked chains `goldEscortRobbery`←`goldRush` + `intercolonialRailway`←`firstRailwayAndTelegraph`. Catalogue prerequisite links **6 → 10**; both new chains pass the reachability guard.
+- **Hardened the test** with a *figure-gate-resolves-to-a-real-father* invariant (the parser guards linked-event ids but not father ids — a typo would silently make an event unreachable).
+**Status:** **Full L1/L2 2992 green** (0 failed); classic byte-identical (no events). Committed + pushed to main (this commit), CI watching.
+**Changed:** `game/data/rules/australia/specification.xml` (4 `<requires>` gates), `AustraliaVariantTests.cs` (+assertions +invariant), `docs/systems/events.md` (both layers + changelog + verified date), `docs/australian_federation_mode_md/ROAD_TO_100.md` (status note), `PostWorkSummary.md`.
+**Decisions:** audited before building (roadmap unreliable); scoped to non-sensitive, zero-balance-fork gates only; **deferred to you** the balance-weighted `goldRush`←Hargraves gate + the sensitive `eurekaStockade`←Lalor gate (tone/balance).
+**Scheduled next:** **your steer needed.** Best *unblocked* code/data follow-ons if you want me to keep going autonomously: more WS4.2 marquee gates (need your tone+balance nod), **WS4.3** founding-father `earliest_year` gates (replace the coarse age-weight bands), **WS6.3** pastoral buildings (Cattle Station / distinct Shearing Shed / Pasture), or close the **WS6.7 test gap** (the entire Australian mode has *zero* L4 goldens / L5 soak — a real binding-requirement hole). I'd recommend the WS6.7 test-coverage gap next — it protects everything already shipped.
+**Follow-ups:** full ClickUp/roadmap status reconciliation (many statuses lag reality — I updated the ones I touched + logged the audit in the Session Log).
+**Needs you (the game is near engine-complete; remaining high-value work is mostly your calls):** (1) **art approach** (§5.2 — unblocks all WS2 visual identity + the 24 Pioneer portraits you source/vet); (2) **First Nations cultural direction + ADR-022** (unblocks WS5 + the WS3.4 victory grades); (3) a **playtest toward 1901** (unblocks the balance passes); (4) **sensitive-event sign-off** (4c.11 — unblocks the Eureka/Chinese-migration/frontier gates); (5) **game name/trademark** (unblocks the title/logo work).
+
+---
+
 ## 2026-07-12 — WS3.5 + WS3.6: Anti-Federation Sentiment + NSW quota / WA late-entry
 
 **Requested (Chris):** save the "decisions-via-questions" preference, then "finish WS3.5/3.6". All design forks answered via AskUserQuestion.

@@ -3469,6 +3469,9 @@
     <!-- A gold escort is held up on the road from the diggings and its consignment taken
          (bushranging plagued the gold roads through the 1850s-60s). -->
     <event-def id="event.goldEscortRobbery" weight="3" cooldown="10" earliest-year="1852" expiry-year="1880" name="The Gold Escort Robbery" prompt="The roads down from the diggings are thick with bushrangers, and a consignment of escorted gold makes a tempting prize. This time the escort is ambushed and overpowered, and the gold is carried off into the ranges. The loss must be borne.">
+      <!-- M-E (doc 01 §2, linked event): a gold-escort robbery presupposes the Gold Rush's gold in transit — no rush,
+           no escort to rob. (Expiry 1880 covers goldRush's full 1851-1870 one-shot firing tail; see the reachability guard.) -->
+      <requires><event id="event.goldRush"/></requires>
       <option id="lose" label="Bear the loss">
         <effect kind="recordHistory" text="Bushrangers hold up the gold escort on the road from the diggings and make off with the consignment."/>
         <effect kind="grantGold" value="-250"/>
@@ -3522,6 +3525,9 @@
          colonial beef and mutton. The spec has no separate 'meat' good (it is folded into
          food/grazing), so the export earner is modelled as gold plus a food/grazing boost. -->
     <event-def id="event.refrigeratedMeat" weight="4" one-shot="true" earliest-year="1880" expiry-year="1901" name="Frozen Meat for London" prompt="In 1880 the steamer Strathleven lands the first cargo of frozen Australian meat in London in sound condition, proving that refrigeration can carry colonial beef and mutton across the tropics to the British table. A vast new export market opens to the pastoral colonies. Will you invest in the freezing works and ship the trade?">
+      <!-- M-E (doc 01 §2, Figure prerequisite): refrigerated-meat export was Thomas Mort's project — his NSW Fresh Food
+           and Ice Company pioneered the freezing works the trade was built on, so it needs him attained. -->
+      <requires><father id="model.foundingFather.thomasSutcliffeMort"/></requires>
       <option id="export" label="Ship the trade">
         <effect kind="recordHistory" text="The first frozen meat cargoes reach London in good order; refrigeration opens the British market to colonial beef and mutton."/>
         <effect kind="timedModifier" target="model.goods.food" type="percentage" value="25" duration="10"/>
@@ -3532,6 +3538,9 @@
     <!-- More railways link the colonies, though each was built to its own gauge (the
          break-of-gauge problem that would vex Federation). Costly, but the network grows. -->
     <event-def id="event.intercolonialRailway" weight="3" cooldown="10" earliest-year="1873" expiry-year="1901" name="The Intercolonial Railways" prompt="The colonies push their trunk lines toward one another, but each is built to its own gauge, so passengers and freight must change trains at every border, the break-of-gauge muddle that will vex Federation for decades. Extending the line is costly, yet it binds the colonies and their markets closer. Do you fund the extension?">
+      <!-- M-E (doc 01 §2, linked event): the intercolonial trunk lines extend the first colonial railway — no first
+           line, no extensions to fund. -->
+      <requires><event id="event.firstRailwayAndTelegraph"/></requires>
       <option id="build" weight="2" label="Fund the extension">
         <effect kind="recordHistory" text="A new trunk railway links the colonies further, though the differing gauges force a change of train at the border."/>
         <effect kind="grantGold" value="-250"/>
@@ -3581,6 +3590,9 @@
     <!-- South Australia grants women the vote and the right to stand for parliament, 1894
          — the first Australian colony, and among the first places in the world, to do so. -->
     <event-def id="event.womensSuffrageSA" weight="3" one-shot="true" earliest-year="1894" expiry-year="1901" name="Votes for Women in South Australia" prompt="In 1894 South Australia moves to grant women not only the vote but the right to stand for parliament, the first Australian colony to do so and among the first places anywhere in the world. Reformers and suffrage campaigners have carried the long argument, and the bill now awaits assent. Will you enact the reform?">
+      <!-- M-E (doc 01 §2, Figure prerequisite): the South Australian suffrage win was carried by its campaigners —
+           Catherine Helen Spence chief among them — so the reform needs her attained. -->
+      <requires><father id="model.foundingFather.catherineHelenSpence"/></requires>
       <option id="enact" label="Enact the reform">
         <effect kind="recordHistory" text="South Australia grants women the vote and the right to stand for parliament — the first Australian colony to do so, and among the first in the world."/>
         <effect kind="grantLiberty" value="30"/>

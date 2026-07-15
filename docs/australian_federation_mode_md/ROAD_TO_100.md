@@ -6,6 +6,19 @@
 
 ---
 
+## 0. Status update — 2026-07-15 (verified code audit)
+
+> **⚠ This roadmap (written 2026-07-09) is now substantially STALE — verify against code before acting on it.** A full three-agent audit of the live code/data/tests on 2026-07-15 found much of Workstreams 1, 3, and 4 already shipped by intervening sessions without this doc (or the kanban) being updated. Ground truth as of 2026-07-15:
+>
+> - **WS1 (Playable & Polished Core): DONE except 1.4.** 1.1a/1.1b (event popup + text), 1.2 (Commonwealth victory + honest addendum), 1.3 (variant art seam), 1.5 (Mode-3 colony select) are all shipped with tests. **1.4 (24 of 25 Pioneer portraits)** remains — asset-sourcing Chris vets (only `williamBarak.jpg` present).
+> - **WS2 (Visual Identity): 2.7 UI-polish DONE;** 2.1–2.6/2.8 are art/asset work gated on the **art-approach decision (§5.2)** + licensing.
+> - **WS3 (Federation Depth): 3.1/3.2/3.5/3.6/3.7/3.8 DONE.** 3.3 PARTIAL (drafting UI + 3-of-7 clauses; rest sign-off/system-gated). **3.4 (victory grades) needs WS5; 3.9 (AI Federation) is a design-judgment call** (Federation is human-only by design).
+> - **WS4 (Living World): 4.1/4.2 PARTIAL.** The conditional/linked-event machinery + **ten** catalogue prerequisites are live (figure-gates + linked chains). **Unblocked remaining:** more non-sensitive WS4.2 gates, and **4.3** (founding-father `earliest_year` gates — still coarse age-weight). 4.4 needs ~28 backing systems; 4.5/4.6 are sensitive-content sign-off gated.
+> - **WS5 (First Nations): only the 8 named cultural-group nations exist in data (5.2 partial).** Everything else is design-led + **ADR-022 / cultural-direction / ICIP-consultation gated (Chris).**
+> - **WS6 (Content/Balance/Ship): 6.3 PARTIAL** (real Federation-era buildings/improvements shipped; pastoral set missing). **Unblocked:** 6.1 distinct goods, 6.2 economic units, 6.3 pastoral buildings, and **6.7's test slice — the Australian mode has ZERO L4 goldens / L5 soak coverage** (a binding-requirement gap). 6.4/6.6 need a playtest; 6.5 deferred.
+>
+> **Net:** the mode is near *engine-complete*. The highest-value remaining work is mostly **gated on Chris's decisions** (art approach, First Nations direction, playtest, sensitive-content sign-off, game name). The genuinely-unblocked autonomous work is: WS4.2/4.3 event & Pioneer depth, WS6.1/6.2/6.3 content, and the WS6.7 test-coverage gap. **TODO: reconcile the §1 table + all six §3 workstream item states + the ClickUp kanban to this audit.**
+
 ## 1. Where we are today (honest current state)
 
 A two-agent audit (design-requirements sweep + live-code inventory) puts the mode at roughly:
