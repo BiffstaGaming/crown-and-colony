@@ -19,6 +19,27 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — Reviewed the next 5 items; shipped WS3.4 (Commonwealth victory grades)
+
+**Requested (Chris):** "Get onto reviewing the next 5 items, then begin the code changes to progress this project."
+**Did — reviewed 5, then built the first:**
+1. **WS3.4 victory grades (`86d3ntj53`) — REVIEWED → ✅ SHIPPED** (below).
+2. **WS6.2 economic units (`86d3n7u0d`) — READY, medium.** Confirmed the Australian roster is still **100% classic FreeCol unit types with display reskins**: the six new WS6.1 goods (Copper/Coal/Sandalwood/Cattle/Meat/Frozen Meat) have **zero** expert units, so `expert-production` never points at them. Work is data-shaped (new `<unit-type>`s + skill/education + unit-change rows), Australia-only → classic byte-identical. **This is the next item.**
+3. **WS6.7 Australian L4 goldens (`86d3n7u0x`) — READY, mechanical.** Harness exists (`GoldenAssert`, `UiPanelGoldenTests`, `MenuGoldenTests`); needs Australia-mode captures + a deliberate golden regeneration through CI Linux.
+4. **WS2.1 art direction + Australian theme (`86d3n7tz9`) — READY, no external assets needed.** `ColonyTheme.cs` is a code-built palette with a single tuning block, so an Australian theme variant is pure code. Caveat: it must be variant-scoped or it invalidates every existing L4 golden.
+5. **WS3.9 AI pursues Federation (`86d3n7tzx`) — RECOMMEND DROPPING.** The whole loop is hard-wired to `_human` across ~15 methods plus per-player save state; making it per-player is a large refactor with real soak/byte-stability risk, against a design that says Federation is human-only. Not worth it — say the word and I'll mark it Cancelled.
+
+**Shipped — WS3.4:** new `Game.CommonwealthGrade.cs` — a pure, **stateless** `CommonwealthScorecardForHuman()` oracle scoring the design's six doc-20 categories 0–100 each (Federation margin against each region's own target, Economy, Civic reform, First Nations, Stability, Historical breadth), awarding the highest category at or above 70 as the grade with **Bare Federation** as the honest floor. `VictoryPanel` renders the grade, a one-line reason and the itemised scorecard as an end-card — on the Commonwealth win only.
+**One judgement call worth your eye:** I found that scoring "Treaty Commonwealth" off native tension would award the game's **rarest** grade to a player who simply **never encountered First Nations** (a fresh board has zero tension). I've **withheld the Treaty grade** until WS5 lands the agreements it is meant to reward — the category is still scored and displayed, so the scorecard stays complete and honest. Reversible in one line if you disagree.
+**Status:** **L1/L2 3007 green** (0 failed, incl. 10 new), **determinism soak 6/6 green**, **CI ✓ both jobs — including the L3/L4 Godot job** (run `30173765248`). Pushed as `6470429`.
+**Changed:** `Game.CommonwealthGrade.cs` (new), `VictoryPanel.cs`, `CommonwealthGradeTests.cs` (new, 10 L1), `VictoryPanelTests.cs` (+2 L3), `docs/systems/federation-victory.md` (both layers + L1/L3 verification rows + changelog). Commit `6470429`.
+**Decisions:** no persisted state and **no save bump** (the scorecard is derived on read); classic reads an all-zero `None` scorecard and renders no end-card (ADR-009); First Nations scored on an explicitly-interim tension proxy pending WS5; category targets are first-pass and tunable like the WS3.7 gate counts.
+**Scheduled next:** **WS6.2 — distinct economic units (`86d3n7u0d`)**: expert units for the real Australian goods (Drover/Digger/Coal miner/Timber-getter), so the WS6.1 economy has experts to work it.
+**Follow-ups:** WS6.7 Australian L4 goldens (`86d3n7u0x`); WS2.1 Australian theme (`86d3n7tz9`); WS1.4 portraits — still 24 of 25 missing, and sourcing them means **downloading ~24 image files** from Wikimedia/NLA, which I'd like your go-ahead for before I start pulling files.
+**Needs you:** (a) a yes/no on my Treaty-grade hold; (b) go-ahead to download the public-domain portrait images; (c) whether to cancel WS3.9. Long-standing gates unchanged: First Nations direction (ADR-022/ICIP) and the 4c.11 sensitive-text sign-off.
+
+---
+
 ## 2026-07-26 — Remaining-work audit (what's left before the game is finished)
 
 **Requested (Chris):** "Update me on what tasks we have left to do before this Game is finished."
