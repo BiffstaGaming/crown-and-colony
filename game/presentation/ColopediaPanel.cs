@@ -547,6 +547,38 @@ public partial class ColopediaPanel : PanelContainer
                 Text = $"{n.DisplayName} — {playable}, {Title(n.NationType.ShortName)} advantage",
             });
         }
+
+        // The peoples whose Country the colony is founded on. Only rulesets that author the text carry a section here:
+        // the classic tribes state no `description`, so classic renders exactly as it did before (no empty heading).
+        List<NativeNationType> described = _game.Ruleset.NativeNationTypes
+            .Where(n => n.Description.Length > 0)
+            .OrderBy(n => n.ShortName, System.StringComparer.Ordinal)
+            .ToList();
+        if (described.Count == 0)
+        {
+            return;
+        }
+
+        dynamic.AddChild(new HSeparator());
+        var heading = new Label { Name = "Nations_FirstNationsHeading", Text = "First Nations" };
+        heading.ThemeTypeVariation = "SectionHeader";
+        dynamic.AddChild(heading);
+
+        foreach (NativeNationType n in described)
+        {
+            dynamic.AddChild(new Label
+            {
+                Name = $"Nations_{n.ShortName}",
+                Text = n.Country.Length > 0 ? $"{n.PlayerFacingName} — {n.Country}" : n.PlayerFacingName,
+            });
+            dynamic.AddChild(new Label
+            {
+                Name = $"Nations_{n.ShortName}_Description",
+                Text = n.Description,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                CustomMinimumSize = new Vector2(560, 0),
+            });
+        }
     }
 
     // ── Resources ────────────────────────────────────────────────────────────────────────────────────────

@@ -138,6 +138,22 @@ public sealed record SettlementType(
 /// <param name="Aggression">The nation's disposition toward colonists.</param>
 /// <param name="Skills">Skills the nation's settlements can teach (inherited + own, weighted).</param>
 /// <param name="Regions">Preferred map-region ids (informational until named regions exist).</param>
+/// <param name="DisplayName">
+/// The player-facing name, when it cannot be derived from the id — ids must stay ASCII, but a people's own spelling may
+/// not be (e.g. id <c>yolngu</c> → <c>Yolŋu</c>). Empty when the ruleset states none, in which case callers fall back
+/// to title-casing <see cref="ShortName"/>, which is what every classic tribe does.
+/// </param>
+/// <param name="Country">
+/// The peoples' Country, in plain words (e.g. <c>"Sydney basin and coastal New South Wales"</c>) — the
+/// <c>country</c> attribute. Empty when the ruleset states none. Australian-variant content: the classic ruleset
+/// authors neither this nor <paramref name="Description"/>, so classic nation types are unchanged.
+/// </param>
+/// <param name="Description">
+/// A short player-facing encyclopedia entry for the nation (the <c>description</c> attribute). Empty when the ruleset
+/// states none, in which case the Colopedia simply shows the name — the pre-existing behaviour for every classic
+/// tribe. Australian-variant content, reviewed and approved by Chris on 2026-07-26 (see
+/// <c>docs/australian_federation_mode_md/FIRST_NATIONS_TEXT_FOR_REVIEW.md</c>).
+/// </param>
 public sealed record NativeNationType(
     string Id,
     string SettlementTypeId,
@@ -145,8 +161,16 @@ public sealed record NativeNationType(
     SettlementNumber NumberOfSettlements,
     NativeAggression Aggression,
     IReadOnlyList<NativeSkill> Skills,
-    IReadOnlyList<string> Regions)
+    IReadOnlyList<string> Regions,
+    string DisplayName = "",
+    string Country = "",
+    string Description = "")
 {
     /// <summary>Short name derived from the id: <c>model.nationType.apache</c> → <c>apache</c>.</summary>
     public string ShortName => Id[(Id.LastIndexOf('.') + 1)..];
+
+    /// <summary>The name to show a player: the authored <see cref="DisplayName"/> when the ruleset states one, else the title-cased <see cref="ShortName"/>.</summary>
+    public string PlayerFacingName => DisplayName.Length > 0
+        ? DisplayName
+        : ShortName.Length == 0 ? ShortName : char.ToUpperInvariant(ShortName[0]) + ShortName[1..];
 }

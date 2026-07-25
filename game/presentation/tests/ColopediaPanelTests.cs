@@ -1,4 +1,8 @@
+using System.Reflection;
 using System.Threading.Tasks;
+using CrownAndColony.GameLogic.GameSession;
+using CrownAndColony.GameLogic.Specification;
+using CrownAndColony.GameLogic.World;
 using CrownAndColony.Presentation;
 using GdUnit4;
 using Godot;
@@ -202,4 +206,61 @@ public class ColopediaPanelTests
         AssertThat(title.Text).Contains("Goods");
         AssertThat(dynamic.GetNodeOrNull<HBoxContainer>("Goods_hammers")).IsNotNull();
     }
+
+    [TestCase]
+    public async Task NationsTab_ShowsTheFirstNationsPeoples_WithTheirCountryAndDescription()
+    {
+        // The eight First Nations peoples in the Australian ruleset used to render as a bare name (in fact they were not
+        // listed at all — the tab only walked the European nations) while every building, unit and good had an entry.
+        // Their approved encyclopedia text (reviewed 2026-07-26) must actually reach the screen.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        SetGame(controller, Game.New(GameVariants.Australia.LoadRuleset(), 0xC0FFEEUL, mapSource: MapSource.Australia));
+        SetVariant(controller, GameVariants.Australia);
+        controller.OpenColopediaPanel();
+        await runner.SimulateFrames(1);
+
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColopediaPanel/VBox/Scroll/Dynamic");
+        controller.GetNode<Button>("UI/ColopediaPanel/VBox/Scroll/Dynamic/Tabs/Cat_Nations").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(dynamic.GetNodeOrNull<Label>("Nations_FirstNationsHeading")).IsNotNull();
+        foreach (string people in new[] { "eora", "kulin", "noongar", "wangkatja", "larrakia", "yolngu", "yawuru", "arrernte" })
+        {
+            AssertThat(dynamic.GetNodeOrNull<Label>($"Nations_{people}"))
+                .OverrideFailureMessage($"the {people} entry is missing from the Colopedia Nations tab").IsNotNull();
+            var description = dynamic.GetNodeOrNull<Label>($"Nations_{people}_Description");
+            AssertThat(description).OverrideFailureMessage($"the {people} description is missing").IsNotNull();
+            AssertThat(description!.Text.Length > 100).IsTrue();
+        }
+
+        // The people's own spelling reaches the screen, not the ASCII id (ids must stay ASCII; names need not).
+        AssertThat(dynamic.GetNode<Label>("Nations_yolngu").Text).Contains("Yolŋu");
+    }
+
+    [TestCase]
+    public async Task NationsTab_ShowsNoFirstNationsSection_ForClassic()
+    {
+        // Classic authors no encyclopedia text for its tribes, so the section is skipped entirely — no empty heading.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        controller.OpenColopediaPanel();
+        await runner.SimulateFrames(1);
+        var dynamic = controller.GetNode<VBoxContainer>("UI/ColopediaPanel/VBox/Scroll/Dynamic");
+        controller.GetNode<Button>("UI/ColopediaPanel/VBox/Scroll/Dynamic/Tabs/Cat_Nations").EmitSignal(BaseButton.SignalName.Pressed);
+        await runner.SimulateFrames(1);
+
+        AssertThat(dynamic.GetNodeOrNull<Label>("Nations_dutch")).IsNotNull();               // still there
+        AssertThat(dynamic.GetNodeOrNull<Label>("Nations_FirstNationsHeading")).IsNull();    // …and no new section
+    }
+
+    private static void SetGame(GameController controller, Game game) =>
+        controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, game);
+
+    private static void SetVariant(GameController controller, GameVariant variant) =>
+        controller.GetType().GetField("_variant", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, variant);
 }

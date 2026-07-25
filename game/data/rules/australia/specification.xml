@@ -3979,7 +3979,9 @@
          modelled as inherently more hostile than another. The holistic contextual-resistance system is deferred
          to epic 4b (ADR-022, sign-off-gated). -->
     <indian-nation-type id="model.nationType.arrernte" extends="camp"
-                        number-of-settlements="average" aggression="average">
+                        number-of-settlements="average" aggression="average"
+                        country="Central Australia, around Mparntwe (Alice Springs)"
+                        description="The Arrernte hold Country in the centre of the continent, around Mparntwe - the place the colonists called Alice Springs. Survival in the arid centre rests on detailed knowledge of water sources and the routes between them. Colonial expeditions and the Overland Telegraph Line of the 1870s cut directly through Arrernte Country, and the telegraph station became the town.">
       <skill id="model.unit.masterCottonPlanter" probability="20"/>
       <skill id="model.unit.expertFarmer" probability="10"/>
       <skill id="model.unit.masterSugarPlanter" probability="3"/>
@@ -3987,7 +3989,9 @@
       <region id="model.region.center" />
     </indian-nation-type>
     <indian-nation-type id="model.nationType.yawuru" extends="camp"
-                        number-of-settlements="average" aggression="average">
+                        number-of-settlements="average" aggression="average"
+                        country="Broome and the west Kimberley coast"
+                        description="The Yawuru are the coastal people of the Broome region on the west Kimberley coast, their Country taking in mangroves, mudflats and the waters beyond. From the 1880s the pearling industry transformed the region, drawing workers from across Asia and the Pacific and relying heavily - and often coercively - on Aboriginal labour.">
       <skill id="model.unit.masterTobaccoPlanter" probability="20"/>
       <skill id="model.unit.expertFurTrapper" probability="10"/>
       <skill id="model.unit.seasonedScout" probability="10"/>
@@ -3995,7 +3999,9 @@
       <region id="model.region.northWest" />
     </indian-nation-type>
     <indian-nation-type id="model.nationType.kulin" extends="camp"
-                        number-of-settlements="high" aggression="low">
+                        number-of-settlements="high" aggression="low"
+                        country="Port Phillip and central Victoria"
+                        description="The Kulin are an alliance of neighbouring peoples - among them the Wurundjeri, Boonwurrung, Taungurung, Dja Dja Wurrung and Wadawurrung - whose Country covers Port Phillip and central Victoria. The 1835 arrival of settlers at the Yarra began a rapid dispossession. Kulin leaders, William Barak foremost among them, spent the following decades petitioning colonial governments for land and rights.">
       <skill id="model.unit.masterSugarPlanter" probability="20"/>
       <skill id="model.unit.seasonedScout" probability="10"/>
       <skill id="model.unit.masterCottonPlanter" probability="10"/>
@@ -4005,14 +4011,18 @@
       <region id="model.region.south" />
     </indian-nation-type>
     <indian-nation-type id="model.nationType.eora" extends="village"
-                        number-of-settlements="low" aggression="average">
+                        number-of-settlements="low" aggression="average"
+                        country="Sydney basin and coastal New South Wales"
+                        description="The Eora are the coastal people of the Sydney basin, on whose Country the First Fleet anchored in January 1788. Theirs was a marine economy - fishing from bark canoes, gathering shellfish along the harbour and its inlets. The arrival of the colony brought dispossession and a catastrophic smallpox epidemic within two years. Eora people remain in Sydney today.">
       <skill id="model.unit.masterSugarPlanter" probability="20"/>
       <skill id="model.unit.expertFisherman" probability="10"/>
       <skill id="model.unit.masterFurTrader" probability="3"/>
       <region id="model.region.east" />
     </indian-nation-type>
     <indian-nation-type id="model.nationType.larrakia" extends="village"
-                        number-of-settlements="average" aggression="low">
+                        number-of-settlements="average" aggression="low"
+                        country="Darwin region, Northern Territory"
+                        description="The Larrakia are the saltwater people of the Darwin region, with Country covering the harbour, coast and nearby islands. Their long-standing trade and travel connections run along the northern coast. The founding of Palmerston, later Darwin, in 1869 placed a colonial port directly on Larrakia Country. They are known today as the traditional owners of Darwin.">
       <skill id="model.unit.masterCottonPlanter" probability="20"/>
       <skill id="model.unit.expertFisherman" probability="10"/>
       <skill id="model.unit.expertOreMiner" probability="10"/>
@@ -4023,7 +4033,10 @@
       <region id="model.region.north" />
     </indian-nation-type>
     <indian-nation-type id="model.nationType.yolngu" extends="village"
-                        number-of-settlements="average" aggression="average">
+                        display-name="Yolŋu"
+                        number-of-settlements="average" aggression="average"
+                        country="North-east Arnhem Land"
+                        description="The Yolŋu of north-east Arnhem Land traded with Macassan mariners from Sulawesi for centuries before British settlement - an established international trade in trepang that predates the colony by generations. Arnhem Land's remoteness meant colonial settlement reached Yolŋu Country later and less completely than the south-east, and Yolŋu communities retain a high degree of autonomy.">
       <skill id="model.unit.expertFurTrapper" probability="20"/>
       <skill id="model.unit.expertFarmer" probability="10"/>
       <skill id="model.unit.seasonedScout" probability="10"/>
@@ -4046,7 +4059,9 @@
          inline city <settlement> overrides are dropped and the Noongar found villages like every other group.
          Skill/region kept as a straight rename. -->
     <indian-nation-type id="model.nationType.noongar" extends="village"
-                        aggression="low">
+                        aggression="low"
+                        country="South-west Western Australia"
+                        description="The Noongar are the people of the entire south-west corner of Western Australia, one of the largest Aboriginal cultural blocs on the continent. Their calendar divides the year into six seasons rather than four, tracking the south-west's distinct cycles of weather, plant and animal life. Noongar Country was taken up for farming and timber from the 1830s onward.">
       <skill id="model.unit.expertOreMiner" probability="10"/>
       <region id="model.region.southWest" />
     </indian-nation-type>
@@ -4054,7 +4069,9 @@
          above. Extends the `village` template; the inline city <settlement> overrides are dropped. Aggression
          lowered from the inherited aztec "high" to "average" — see the First Nations aggression note above. -->
     <indian-nation-type id="model.nationType.wangkatja" extends="village"
-                        aggression="average">
+                        aggression="average"
+                        country="Western Australian goldfields and interior"
+                        description="The Wangkatja peoples hold Country across the arid Western Australian interior and goldfields. Living in that country depends on precise knowledge of water - soaks, rock holes and springs - and of the routes between them. The gold rushes of the 1890s drove thousands of prospectors across that Country in a matter of years.">
       <skill id="model.unit.masterSugarPlanter" probability="3"/>
       <skill id="model.unit.expertOreMiner" probability="3"/>
       <region id="model.region.west" />

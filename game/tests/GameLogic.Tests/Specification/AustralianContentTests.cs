@@ -758,4 +758,65 @@ public class AustralianContentTests
         };
         return save.Restore(Australia);
     }
+
+    // ─────────────────────────── First Nations encyclopedia text (approved by Chris 2026-07-26) ───────────────────────────
+
+    /// <summary>
+    /// The eight First Nations peoples in the Australian ruleset each carry player-facing encyclopedia text — Country and a
+    /// description. Before this they rendered as a bare name while every building, unit and good in the game had an entry.
+    /// The exact wording was drafted, reviewed and approved (see
+    /// <c>docs/australian_federation_mode_md/FIRST_NATIONS_TEXT_FOR_REVIEW.md</c>); this guards that it is present and stays
+    /// present, so a spec edit cannot silently drop a people back to a bare label.
+    /// </summary>
+    [Theory]
+    [InlineData("model.nationType.eora")]
+    [InlineData("model.nationType.kulin")]
+    [InlineData("model.nationType.noongar")]
+    [InlineData("model.nationType.wangkatja")]
+    [InlineData("model.nationType.larrakia")]
+    [InlineData("model.nationType.yolngu")]
+    [InlineData("model.nationType.yawuru")]
+    [InlineData("model.nationType.arrernte")]
+    public void EveryAustralianFirstNationsPeople_CarriesCountryAndDescription(string nationTypeId)
+    {
+        NativeNationType nation = Australia.NativeNation(nationTypeId);
+
+        Assert.False(string.IsNullOrWhiteSpace(nation.Country), $"{nationTypeId} must state its Country");
+        Assert.False(string.IsNullOrWhiteSpace(nation.Description), $"{nationTypeId} must carry an encyclopedia description");
+        Assert.True(nation.Description.Length >= 150, $"{nationTypeId}'s description looks truncated ({nation.Description.Length} chars)");
+    }
+
+    /// <summary>
+    /// The descriptions use the <b>present tense</b> for continuing existence — these are peoples who exist now, which was an
+    /// explicit rule of the approved draft, not a stylistic preference. Guarded loosely (each entry must open by naming the
+    /// people with "are" or "hold", never in a purely past-tense framing).
+    /// </summary>
+    [Fact]
+    public void FirstNationsDescriptions_UseThePresentTense()
+    {
+        foreach (NativeNationType nation in Australia.NativeNationTypes.Where(n => n.Description.Length > 0))
+        {
+            Assert.True(
+                nation.Description.Contains(" are ", System.StringComparison.Ordinal)
+                || nation.Description.Contains(" hold ", System.StringComparison.Ordinal)
+                || nation.Description.Contains(" remain", System.StringComparison.Ordinal)
+                || nation.Description.Contains(" retain", System.StringComparison.Ordinal),
+                $"{nation.Id}'s description must speak of the people in the present tense");
+        }
+    }
+
+    /// <summary>
+    /// <b>Classic is untouched.</b> The classic tribes author no encyclopedia text, so they keep rendering as a bare name
+    /// exactly as before — the Colopedia's First Nations section is skipped entirely when nothing is described (ADR-009 in
+    /// spirit: an Australian-variant content addition must not alter the default game).
+    /// </summary>
+    [Fact]
+    public void ClassicTribes_CarryNoEncyclopediaText()
+    {
+        Assert.All(Classic.NativeNationTypes, n =>
+        {
+            Assert.Equal(string.Empty, n.Country);
+            Assert.Equal(string.Empty, n.Description);
+        });
+    }
 }

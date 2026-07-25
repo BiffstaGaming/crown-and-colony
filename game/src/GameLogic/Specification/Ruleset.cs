@@ -2767,7 +2767,12 @@ public sealed class Ruleset
                 Regions: rootToLeaf
                     .SelectMany(c => c.Elements("region"))
                     .Select(r => RequiredAttribute(r, "id"))
-                    .ToList());
+                    .ToList(),
+                // Optional player-facing encyclopedia text (Australian variant). Absent in classic → empty strings, and
+                // the Colopedia falls back to showing the name alone exactly as before.
+                DisplayName: (string?)el.Attribute("display-name") ?? "",
+                Country: (string?)el.Attribute("country") ?? "",
+                Description: (string?)el.Attribute("description") ?? "");
         }
 
         return (nations, settlements);

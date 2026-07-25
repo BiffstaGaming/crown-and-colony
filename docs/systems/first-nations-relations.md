@@ -2,19 +2,21 @@
 
 | | |
 |---|---|
-| **Status** | In development — WS5.3 mechanics layer implemented (Respect / Country Pressure / Tension + the seven relationship states). Agreements (WS5.4), diplomatic units (WS5.5), the relationship UI (WS5.6) and all First Nations *content* remain **unbuilt and consultation-gated** (ADR-022). |
-| **Last verified** | 2026-07-26 (WS5.3 — 18 new L1 `FirstNationsRelationsTests`; full L1/L2 3025 green; determinism soak 6/6 green; classic byte-identical) |
-| **Code** | `game/src/GameLogic/GameSession/Game.FirstNations.cs`; hooks in `Game.cs` (`ClaimLandByPaying` / `ClaimLandByStealing` / `EndTurn`); persistence in `game/src/GameLogic/Persistence/SaveGame.cs` (v76) |
-| **Tests** | `game/tests/GameLogic.Tests/GameSession/FirstNationsRelationsTests.cs` (L1) |
+| **Status** | In development — mechanics implemented (Respect / Country Pressure / Tension + the seven relationship states) and the eight peoples' encyclopedia text approved and shipped. Agreements, diplomatic units, the relationship UI and all imagery remain unbuilt. |
+| **Last verified** | 2026-07-26 (WS5.3 mechanics + the approved encyclopedia text; full L1/L2 3035 green; determinism soak 6/6 green; classic byte-identical) |
+| **Code** | `game/src/GameLogic/GameSession/Game.FirstNations.cs`; hooks in `Game.cs` (`ClaimLandByPaying` / `ClaimLandByStealing` / `EndTurn`); persistence in `SaveGame.cs` (v76); text in `NativeNationType.cs` + `Ruleset.cs` parse + `ColopediaPanel.cs` |
+| **Tests** | `game/tests/GameLogic.Tests/GameSession/FirstNationsRelationsTests.cs` (L1), `Specification/AustralianContentTests.cs` (L1, the text), `game/presentation/tests/ColopediaPanelTests.cs` (L3, the text on screen) |
 | **Design docs** | `docs/australian_federation_mode_md/15_First_Nations_Design_Principles.md`, `16_First_Nations_Cultural_Groups.md`, `18_Diplomacy_Tension_Respect_Mechanics.md` |
 | **FreeCol reference** | `ServerPlayer.csNewTurn` (ambient alarm), `Tension` / `csClaimLand` — the *inherited* single-axis model this system extends, not replaces wholesale |
 | **Related systems** | [natives](natives.md) (the inherited alarm engine this builds on), [federation-victory](federation-victory.md) (the Treaty grade this will unlock), [save-load](save-load.md) |
 
-> **Scope and cultural governance.** This document describes a **mechanics layer only**. It introduces no new
-> player-facing cultural content, naming, imagery or framing. The designed Agreements, Knowledge Exchange, diplomatic
-> units and relationship UI — and every piece of representational content — remain gated on **ADR-022** and First
-> Nations consultation (the project's binding ICIP rule; docs 15/16). Nothing here should be read as settling how those
-> peoples are represented; it settles only how the *numbers* behave underneath.
+> **Scope and cultural governance.** This document covers the **mechanics layer** (§1–3) and the **encyclopedia text**
+> (§3a). The text was drafted, reviewed by Chris and approved on 2026-07-26 under his standing decision that Claude
+> drafts and he reviews before anything ships — the provenance record is
+> [FIRST_NATIONS_TEXT_FOR_REVIEW.md](../australian_federation_mode_md/FIRST_NATIONS_TEXT_FOR_REVIEW.md).
+> **Still not built, and still requiring review before they are:** imagery of any kind, the further peoples from doc 16,
+> the resistance-event chains, the Agreements/Knowledge-Exchange content, and the relationship UI. Every one of those
+> goes through the same draft → review → ship loop; none is written yet.
 
 ## 1. How it works (plain English)
 
@@ -115,6 +117,29 @@ omitted from the save. Verified by `Classic_HasNoRelationshipModel_AndOmitsTheSa
   [federation-victory](federation-victory.md)); it should move onto `RelationshipWithFirstNations` once Agreements land,
   which is also what unlocks the withheld **Treaty Commonwealth** grade.
 
+## 3a. The encyclopedia text (content)
+
+Each of the eight First Nations peoples in the Australian ruleset carries player-facing text — a `country` (where their
+Country is, in plain words) and a `description` (a ~50-word encyclopedia entry). Before this they had **no entry at
+all**: the Colopedia's Nations tab walked only the European powers, so a people appeared in the world with a bare label
+while every building, unit and good in the game had a proper entry.
+
+`NativeNationType` gained three optional fields — `DisplayName`, `Country`, `Description` — parsed from optional
+`display-name` / `country` / `description` attributes on `<indian-nation-type>`. **Classic authors none**, so classic
+nation types carry empty strings and the Colopedia skips the whole section (no empty heading); this is guarded by
+`ClassicTribes_CarryNoEncyclopediaText` and by an L3 test.
+
+`DisplayName` exists because ruleset **ids must stay ASCII** while a people's own spelling need not: the id is `yolngu`
+and the name shown is **Yolŋu**. `PlayerFacingName` returns the authored name when present, else the title-cased short
+name (what every classic tribe does).
+
+**Provenance of the wording.** The text was drafted, put to Chris for review, and approved on 2026-07-26 — see
+[FIRST_NATIONS_TEXT_FOR_REVIEW.md](../australian_federation_mode_md/FIRST_NATIONS_TEXT_FOR_REVIEW.md), which records
+both the entries and the rules the draft held to: documented public facts only; present tense for continuing existence;
+**no sacred, ceremonial or restricted material**; no invented individuals or dialogue; colonisation stated plainly but
+not dwelt on. Deliberately **not** included: imagery; the further peoples from doc 16 who are not in the game data; and
+doc 16's resistance-event chains, which dramatise frontier killing and need per-item sign-off rather than bundling.
+
 ## 4. Verification
 
 | Layer | Required? | Tests | Status |
@@ -138,4 +163,5 @@ omitted from the save. Verified by `Classic_HasNoRelationshipModel_AndOmitsTheSa
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-07-26 | **First Nations encyclopedia text (content, approved by Chris).** The eight peoples in the Australian ruleset gained `country` + `description` text and, where needed, an authored `display-name` (id `yolngu` → **Yolŋu**), surfaced as a new "First Nations" section on the Colopedia Nations tab — they previously were not listed there at all. `NativeNationType` gained `DisplayName`/`Country`/`Description` (all optional, empty in classic) and `PlayerFacingName`. Classic renders exactly as before: no text authored, section skipped. Wording drafted → reviewed → approved (see the review doc); no imagery, no restricted material, no resistance-event content. | (this commit) |
 | 2026-07-26 | **Initial implementation — the WS5.3 three-axis relationship model.** Respect (persisted, save v76, nation-scoped, 0–100, seeded at 35 on contact, +5 paying for land / −12 seizing it), Country Pressure (derived 0–100 from the live colonial footprint, so withdrawal relieves it), and the existing alarm reused as Tension on a 0–100 read — plus a per-turn pass in which Country Pressure and low Respect keep feeding Tension, and doc 18's seven relationship states derived Tension-first. Mechanics only: no new cultural content, naming or framing (ADR-022 / ICIP gated). Classic is entirely unaffected and byte-identical (ADR-009). | (this commit) |

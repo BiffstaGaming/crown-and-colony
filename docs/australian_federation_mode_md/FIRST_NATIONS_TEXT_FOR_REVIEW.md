@@ -1,16 +1,17 @@
 # First Nations text — draft for Chris to read
 
-**Status: DRAFT. Nothing here is in the game yet.**
-Written 2026-07-26. Chris's decision (2026-07-26): *"I write it, you read it."* — so this is the reading step.
-Once you say yes (or mark changes), I put it into the game data and it appears in the Colopedia and the diplomacy
-screens. Until then the game shows what it shows today: a name and nothing else.
+**Status: APPROVED by Chris on 2026-07-26 and now IN THE GAME.**
+This document is retained as the provenance record for the wording — what was written, why, and what was deliberately
+left out. The live text is in `game/data/rules/australia/specification.xml` on each `<indian-nation-type>`.
+Written and approved 2026-07-26, under Chris's decision that same day: *"I write it, you read it."* The sections below
+are preserved as written for review — see **Outcome** at the end for what shipped.
 
 ---
 
 ## What this is, in one paragraph
 
 Your game already has eight First Nations peoples in it as playable-world nations — Eora, Kulin, Noongar, Wangkatja,
-Larrakia, Yolŋu, Yawuru and Arrernte. Right now a player who clicks on one sees **a name and nothing else**. Every
+Larrakia, Yolŋu, Yawuru and Arrernte. *(At the time of writing)* a player who clicks on one sees **a name and nothing else**. Every
 other thing in the game (every building, unit, good, historical figure) has an encyclopedia entry explaining what it
 is. These don't. That's the gap this fills.
 
@@ -118,10 +119,14 @@ leaving it out would misrepresent what happened in the very place and decade you
 principles explicitly call for truth-telling rather than a sanitised frontier. But it is the sharpest sentence in the
 set, and if you want it softened or removed, say so — it's a one-line change.
 
-## What happens after you read this
+## Outcome
 
-- **"Yes, fine"** → I put all eight into the game data, they appear in the encyclopedia and diplomacy screens, with
-  tests and documentation, same as any other change.
-- **"Change X"** → tell me which, I redraft, you re-read.
-- **"Actually get someone qualified to check it first"** → completely reasonable, and nothing is lost; the text just
-  sits here until then.
+Chris approved the text unchanged on 2026-07-26, including the Eora smallpox sentence. All eight entries are now in
+`game/data/rules/australia/specification.xml` and appear under a **First Nations** heading on the Colopedia's Nations
+tab. Guarded by `AustralianContentTests` (every people carries Country + description; present tense; classic authors
+none) and by `ColopediaPanelTests` (the entries reach the screen; classic grows no section).
+
+One correction made while wiring it in: the game now spells **Yolŋu** with the ŋ, via a new authored `display-name`
+attribute — ruleset ids have to stay ASCII, but a people's name does not.
+
+Still outstanding, unchanged: imagery, the further peoples from doc 16, and the resistance-event chains.
