@@ -204,6 +204,54 @@ public class CommonwealthGradeTests
         Assert.Equal(CommonwealthGrade.Economic, card.Grade);
     }
 
+    // ─────────────────────────────── First Nations category + the Treaty grade ───────────────────────────────
+
+    [Fact]
+    public void DoingNothing_ScoresPoorlyOnFirstNations_AndIsNotAwardedTreaty()
+    {
+        // The regression this category was rewritten to prevent: when it scored only "harm avoided", a player who never
+        // encountered First Nations at all read a perfect 100 and would have been handed the game's RAREST grade for
+        // doing nothing. Earned Respect is now half the score, and it starts at zero.
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out Dictionary<AustraliaColony, Colony> colonies);
+        foreach (Colony colony in colonies.Values)
+        {
+            SetSupportPercent(colony, 100);
+        }
+
+        CommonwealthScorecard card = game.CommonwealthScorecardForHuman();
+
+        Assert.True(card.FirstNations < 70,
+            $"an untouched board must not clear the First Nations bar (got {card.FirstNations})");
+        Assert.NotEqual(CommonwealthGrade.Treaty, card.Grade);
+    }
+
+    [Fact]
+    public void EarnedRespect_LiftsTheFirstNationsScore_AndCanWinTheTreatyGrade()
+    {
+        // Respect only moves through conduct, so this is the honest opposite case: a colonist who has built real trust
+        // with every people on the map earns the grade that cannot be bought with production.
+        Game game = NewAustralia();
+        FoundAllSixRegions(game, out Dictionary<AustraliaColony, Colony> colonies);
+        foreach (Colony colony in colonies.Values)
+        {
+            SetSupportPercent(colony, 100);
+        }
+        int bare = game.CommonwealthScorecardForHuman().FirstNations;
+
+        foreach (string nation in game.NativeSettlements.Select(s => s.NationTypeId).Distinct())
+        {
+            game.RecordFirstNationsContact(nation);
+            game.ChangeFirstNationsRespect(nation, 100); // clamps at the ceiling
+        }
+
+        CommonwealthScorecard card = game.CommonwealthScorecardForHuman();
+
+        Assert.True(card.FirstNations > bare, $"earned Respect must lift the category ({card.FirstNations} vs {bare})");
+        Assert.True(card.FirstNations >= 70, $"full Respect on an uninflamed board should clear the bar (got {card.FirstNations})");
+        Assert.Equal(CommonwealthGrade.Treaty, card.Grade);
+    }
+
     // ─────────────────────────────── helpers ───────────────────────────────
 
     private static Game NewAustralia() => Game.New(Australia, Seed, mapSource: MapSource.Australia);

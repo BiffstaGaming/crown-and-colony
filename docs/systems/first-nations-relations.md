@@ -113,9 +113,10 @@ omitted from the save. Verified by `Classic_HasNoRelationshipModel_AndOmitsTheSa
 - Respect currently moves on two hooks (land paid / land seized). Doc 18's other sources — fair trade, gifts during
   hardship, honoured agreements, violence, livestock damage, forced movement, armed intimidation — are follow-ups;
   several depend on Agreements (WS5.4) existing at all.
-- The `CommonwealthScorecard` First Nations category still reads raw tension (see
-  [federation-victory](federation-victory.md)); it should move onto `RelationshipWithFirstNations` once Agreements land,
-  which is also what unlocks the withheld **Treaty Commonwealth** grade.
+- ~~The `CommonwealthScorecard` First Nations category still reads raw tension.~~ **Done (2026-07-26):** it now reads
+  earned Respect plus harm avoided, which is what unlocked the previously-withheld **Treaty Commonwealth** grade — see
+  [federation-victory](federation-victory.md). Agreements (WS5.4) will deepen what feeds it, but were not needed to make
+  it honest.
 
 ## 3a. The encyclopedia text (content)
 
