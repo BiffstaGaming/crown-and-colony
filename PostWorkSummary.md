@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — WS1.4: the Pioneer portraits are in (24 of 25) + a decision brief
+
+**Requested (Chris):** "Download public-domain images. Give me exact information on what you need decisions from me, provide info on what the pro/con's are. I haven't looked at this project for weeks."
+**Did:**
+- **Sourced, vetted and shipped 23 Pioneer portraits** (+ Barak already in place = **24 of 25**). The mode's biggest visual gap is closed: every Pioneer but James Ruse now shows a face in the Federation Convention dialog and the Colopedia instead of blank space. Fetched from Wikimedia Commons at 480px (14–117 KB each — the panel draws ~200×237, so full-res originals would be pure repo weight), licence read from each file's **own Commons metadata**, and every file recorded in the Asset Register with date, author/holder, licence and file-page URL.
+- **The licence vetting held up.** The six figures the earlier research flagged ⚠ (sitter died 1920–35, so only a *photograph* is safely PD — a *painting* runs life-of-artist + 70y) all resolved to genuine studio photographs: Barton (Swiss Studios 1902), Quick (W. Vincent Kelly 1910s), Griffith (SLQ), Jervois, Louisa Lawson (c.1885), and **Kidman at 1927** — the ⚠⚠ riskiest entry, comfortably inside its pre-1929 bar. **22 are public domain; `maryLee.jpg` is CC BY 2.0** (State Library of SA) — GPL-compatible but attribution-bearing, so it is credited in `CREDITS.md`. It is the only non-PD image.
+- **James Ruse stays deliberately portrait-less.** No authenticated likeness of him exists (a Commons sweep found only the road, bridge and high school named after him). A misattributed portrait would be worse than the graceful text-only fallback, so the L3 guard asserts his **absence** — quietly dropping in an unvetted image also trips the test.
+- **Caught and fixed a self-inflicted CI red:** the pre-existing `MissingAssetEverywhere_ReturnsNull` guard used `henryParkes` as its "genuinely absent" example, which my portraits turned into a real asset. Repointed it at `jamesRuse`, so the case stays meaningful.
+**Status:** **CI ✓ both jobs including L3/L4 Godot** (run `30174414991`, after the red at `30174267093` — caught, fixed, re-verified). Pushed `5710656` + `408dd0a`.
+**Changed:** 23 portraits + `.import` sidecars under `game/assets/australia/fathers/`, `PROVENANCE.md` (new supplied-portraits table + vetting outcomes), `CREDITS.md` (licence summary + attribution block), `fathers/README.md`, `ColonyArtTests.cs` (coverage guard + repointed absence guard).
+**Decisions:** 480px thumbnails not originals (repo weight); Wikipedia lead-image → Commons metadata as the sourcing pipeline (the licence comes from the file itself, not my judgement); Ruse text-only rather than a substitute image.
+**Scheduled next:** **WS6.2 — distinct economic units (`86d3n7u0d`)**: expert units for the real Australian goods, so the WS6.1 economy has experts to work it.
+**Follow-ups:** WS6.7 Australian L4 goldens (`86d3n7u0x`); WS2.1 Australian theme (`86d3n7tz9`); WS2.4/2.5 unit + terrain art (the next-largest visual gap now portraits are done).
+**Needs you:** a full decision brief with pros/cons was written into the chat reply — six open items, of which only **First Nations depth (WS5)** genuinely blocks work. The rest have safe defaults I'll proceed on if you say nothing.
+
+---
+
 ## 2026-07-26 — Reviewed the next 5 items; shipped WS3.4 (Commonwealth victory grades)
 
 **Requested (Chris):** "Get onto reviewing the next 5 items, then begin the code changes to progress this project."
