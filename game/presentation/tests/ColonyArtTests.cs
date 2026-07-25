@@ -45,11 +45,14 @@ public class ColonyArtTests
         try
         {
             // A genuinely-absent asset resolves to null under both a variant root and classic — the graceful-degradation
-            // path callers rely on (e.g. an Australian Pioneer with no portrait yet renders text-only, WS1.4).
+            // path callers rely on (e.g. an Australian Pioneer with no portrait renders text-only, WS1.4).
+            // NOTE: this used to probe `henryParkes`, which became a REAL asset when the 2026-07-26 portrait set landed.
+            // It now probes `jamesRuse` — the one Pioneer who is deliberately portrait-less (no authenticated likeness of
+            // him exists), so the case stays genuinely absent and meaningful rather than merely "not sourced yet".
             ColonyArt.VariantArtRoot = "australia";
-            AssertThat(ColonyArt.FatherPortrait("henryParkes")).IsNull(); // no australia portrait yet, and no FreeCol one
+            AssertThat(ColonyArt.FatherPortrait("jamesRuse")).IsNull(); // no australia portrait by design, and no FreeCol one
             ColonyArt.VariantArtRoot = null;
-            AssertThat(ColonyArt.FatherPortrait("henryParkes")).IsNull();
+            AssertThat(ColonyArt.FatherPortrait("jamesRuse")).IsNull();
         }
         finally
         {
