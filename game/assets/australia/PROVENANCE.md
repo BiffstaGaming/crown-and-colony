@@ -52,9 +52,56 @@ The head-and-shoulders portrait shown beside each Australian Pioneer in the
 `ColonyArt.FatherPortrait`. Filenames are the ruleset **short name** so the loader is
 a direct lookup. Absent → the Pioneer renders text-only (graceful).
 
-**Status: 1 / 25 supplied** — **`williamBarak.jpg`** (signed off + added 2026-07-12; see the bottom of this
-section). The other 24 remain to source: the "recommended source" column is a sourcing guide (researched +
-PD-verified 2026-07-10); Chris sources and vets the actual files, then fills **Source URL** and **Licence**.
+**Status: 24 / 25 supplied** (added 2026-07-26). Every Pioneer but **James Ruse** now has a vetted portrait —
+sourced from Wikimedia Commons, licence read from each file's own Commons metadata, and recorded in the
+**Supplied portraits** table below. **`jamesRuse` is deliberately text-only**: no authenticated likeness of him
+exists (the sourcing note below flagged this in advance, and a Commons sweep confirmed it — the only "James Ruse"
+images are of the road, bridge and high school named after him). Inventing or mislabelling one would be worse than
+the graceful text-only fallback, so he stays without a portrait unless an authenticated likeness surfaces.
+
+Images were fetched at 480px width (Commons thumbnail renditions, 14–117 KB each) rather than full resolution:
+the panel draws them at roughly 200×237, so the larger originals would be pure repository weight.
+
+### Supplied portraits (added 2026-07-26)
+
+All files are `fathers/<shortName>.jpg`. "Licence" is the licence Wikimedia Commons states on the file page.
+
+| Filename | Commons file | Date | Author / holder | Licence | Source (file page) |
+|---|---|---|---|---|---|
+| `arthurPhillip.jpg` | Arthur_Phillip_-_Wheatley_ML124_(cropped).jpg | 1786 | Francis Wheatley | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Arthur_Phillip_-_Wheatley_ML124_(cropped).jpg) |
+| `carolineChisholm.jpg` | Caroline_Chisholm,_1852_SLNSW_FL3259987.jpg | 1852 | Angelo Collen Hayter | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Caroline_Chisholm,_1852_SLNSW_FL3259987.jpg) |
+| `catherineHelenSpence.jpg` | Catherine_Helen_Spence_c_1900_side_portrait.jpg | circa 1900 | Unknown author | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Catherine_Helen_Spence_c_1900_side_portrait.jpg) |
+| `charlesSturt.jpg` | Charles_Sturt_by_John_Michael_Crossland_lowres_color.jpg | 1853 | anonymous | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Charles_Sturt_by_John_Michael_Crossland_lowres_color.jpg) |
+| `charlesTodd.jpg` | Charles Todd.jpeg | Dated 1872. | — | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Charles_Todd.jpeg) |
+| `edmundBarton.jpg` | Edmund_Barton_-_Swiss_Studios_(b&w).jpg | 1902 | Swiss Studios | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Edmund_Barton_-_Swiss_Studios_(b%26w).jpg) |
+| `edwardHargraves.jpg` | Hargraves_by_Thomas_Balcombe_1851.jpg | 1851-06 | Thomas Tyrwitt Balcombe | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Hargraves_by_Thomas_Balcombe_1851.jpg) |
+| `elizabethMacarthur.jpg` | ElizabethMacarthur.jpg | undated - 19th century | Unidentified painter | Public domain | [file page](https://commons.wikimedia.org/wiki/File:ElizabethMacarthur.jpg) |
+| `georgeFifeAngas.jpg` | George_Fife_Angas.jpg | 15 March 2005 (original upload date) | The original uploader was Diceman at English Wikipedia. | Public domain | [file page](https://commons.wikimedia.org/wiki/File:George_Fife_Angas.jpg) |
+| `henryParkes.jpg` | Henryparkes.jpg | — | Unknown author | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Henryparkes.jpg) |
+| `johnMcDouallStuart.jpg` | John_McDouall_Stuart_(Portrait).jpg | circa 1860 | Unknown author | Public domain | [file page](https://commons.wikimedia.org/wiki/File:John_McDouall_Stuart_(Portrait).jpg) |
+| `johnQuick.jpg` | John_Quick_-_W._Vincent_Kelly_(cropped).jpg | 1910s | W. Vincent Kelly | Public domain | [file page](https://commons.wikimedia.org/wiki/File:John_Quick_-_W._Vincent_Kelly_(cropped).jpg) |
+| `lachlanMacquarie.jpg` | Ln-Governor-Lachlan_macquarie.jpg | between circa 1805 and circa 1824 | John Opie? | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Ln-Governor-Lachlan_macquarie.jpg) |
+| `louisaLawson.jpg` | Louisa_Lawson_V1-FL3303627.jpg | ca. 1885 | Unknown | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Louisa_Lawson_V1-FL3303627.jpg) |
+| `ludwigLeichhardt.jpg` | Ludwig_Leichhardt.jpg | — | Friedrich August Schmalfuß (1791–1876), (Leichhardt-Museum, Trebatsch) | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Ludwig_Leichhardt.jpg) |
+| `maryLee.jpg` | Mary_Lee.jpg | 1885 | State Library of South Australia | CC BY 2.0 | [file page](https://commons.wikimedia.org/wiki/File:Mary_Lee.jpg) |
+| `maryReibey.jpg` | Mary_Reibey_State_Library_of_NSW_Min_76.jpg | circa 1835 | Unknown author | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Mary_Reibey_State_Library_of_NSW_Min_76.jpg) |
+| `matthewFlinders.jpg` | Toussaint_Antoine_DE_CHAZAL_DE_Chamerel_-_Portrait_of_Captain_Matthew_Flinders,_RN,_1774-1814_-_Google_Art_Project.jpg | from 1806 until 1807 | Antoine Toussaint de Chazal | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Toussaint_Antoine_DE_CHAZAL_DE_Chamerel_-_Portrait_of_Captain_Matthew_Flinders,_RN,_1774-1814_-_Google_Art_Project.jpg) |
+| `peterLalor.jpg` | Peter_Lalor_(cropped).jpg | before 1889 (subject's death) | not stated | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Peter_Lalor_(cropped).jpg) |
+| `samuelGriffith.jpg` | Sir_Samuel_Walker_Griffith.jpg | uncertain (subject died 1920) | State Library of Queensland | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Sir_Samuel_Walker_Griffith.jpg) |
+| `sidneyKidman.jpg` | Sidney_Kidman.jpg | 1927 | Unknown author | Public domain | [file page](https://commons.wikimedia.org/wiki/File:Sidney_Kidman.jpg) |
+| `thomasSutcliffeMort.jpg` | TSMort&TheresaAbt1847.jpg | 1846 | Unknown author | Public domain | [file page](https://commons.wikimedia.org/wiki/File:TSMort%26TheresaAbt1847.jpg) |
+| `williamJervois.jpg` | William_Jervois.jpg | — | — | Public domain | [file page](https://commons.wikimedia.org/wiki/File:William_Jervois.jpg) |
+
+
+**Vetting outcomes worth recording.**
+- The six figures the sourcing notes flagged ⚠ ("must be a **photograph**, not a painting, because the sitter died
+  1920–1935 but a painting runs life-of-artist + 70y") all resolved to genuine studio **photographs**: Edmund Barton
+  (Swiss Studios, 1902), John Quick (W. Vincent Kelly, 1910s), Samuel Griffith (State Library of Queensland),
+  William Jervois, Louisa Lawson (c. 1885) and **Sidney Kidman (1927 — the ⚠⚠ riskiest entry, and comfortably
+  pre-1929 as required)**. The PD basis therefore holds for each.
+- **`maryLee.jpg` is CC BY 2.0, not public domain** (State Library of South Australia, 1885). CC BY is
+  GPL-v2-compatible for distribution but **carries an attribution obligation** — it is credited in `CREDITS.md`.
+  It is the only non-PD portrait in the set.
 
 > **Public-domain basis, in brief.** In Australia a photograph *taken before
 > 1 Jan 1955* is PD regardless of photographer; a *painted* portrait runs

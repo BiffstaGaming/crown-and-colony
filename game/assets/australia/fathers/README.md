@@ -1,8 +1,12 @@
 # Australian Pioneer portraits — drop vetted images here
 
 This folder holds the head-and-shoulders portraits for the **Australian Pioneers**
-(the variant's "founding fathers"). It is wired but **deliberately empty** until
-vetted public-domain images are dropped in — see the licensing rule below.
+(the variant's "founding fathers"). **24 of the 25 are supplied** (added 2026-07-26,
+sourced from Wikimedia Commons and recorded in the Asset Register).
+
+**James Ruse is deliberately absent** — no authenticated likeness of him is known to
+exist, so he renders text-only rather than carrying a misattributed portrait. If one
+ever surfaces, drop in `jamesRuse.jpg` and it loads with no code change.
 
 ## How the loading works (no code change needed)
 
@@ -26,7 +30,7 @@ sidecar on first import).
   shoulders crop so the thumbnail sits cleanly beside the choose button. Any
   reasonable portrait works; off-aspect images are letterboxed (KeepAspectCentered).
 
-## The 24 filenames to supply
+## The 24 filenames (all supplied except `jamesRuse`)
 
 henryParkes · edmundBarton · johnQuick · samuelGriffith · catherineHelenSpence ·
 elizabethMacarthur · thomasSutcliffeMort · georgeFifeAngas · edwardHargraves ·

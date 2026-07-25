@@ -34,6 +34,8 @@ FreeCol-sourced, OFL-font, and project-original files catalogued here are presen
 |---|---|---|
 | **GPL v2 or later** | FreeCol art (sprites, terrain, UI, settlements, bonus/goods/building icons), sound effects, national anthems, ruleset XML + string data, America + Australia map terrain | Yes — same license as the game |
 | **CC BY 4.0** | FreeCol background-music tracks | Yes — one-way compatible into GPL v2; attribution required (below) |
+| **Public domain** | 22 of the 24 Australian Pioneer portraits (pre-1955 photographs / pre-1931 works, via Wikimedia Commons) | Yes — no restrictions; provenance recorded in the Asset Register |
+| **CC BY 2.0** | One Australian Pioneer portrait (Mary Lee) | Yes — one-way compatible into GPL v2; attribution required (below) |
 | **SIL Open Font License 1.1 (OFL)** | The Cardo UI font | Yes — font is a data asset under OFL; game code stays GPL v2 |
 
 Full license texts: [`game/assets/licenses/GPL-2.0.txt`](game/assets/licenses/GPL-2.0.txt),
@@ -156,6 +158,27 @@ from FreeCol's `data/default/resources/music/default/`, licensed **CC BY 4.0**
 - **License:** CC BY 4.0 (`game/assets/licenses/CC-BY-4.0.txt`).
 - **Required attribution:** "Background music by Alexander Zhelanov, licensed under
   CC BY 4.0, via the FreeCol project."
+
+---
+
+## Australian Pioneer portraits — public domain (+ one CC BY 2.0)
+
+The 24 supplied portraits under `game/assets/australia/fathers/`, sourced from
+**Wikimedia Commons** and shown beside each Australian Pioneer in the Federation
+Convention dialog and the Colopedia. Per-file provenance — Commons file name, date,
+author/holder, licence and the file-page URL — is recorded in
+[`game/assets/australia/PROVENANCE.md`](game/assets/australia/PROVENANCE.md).
+
+- **23 are public domain**, on a pre-1955-photograph or pre-1931-publication basis
+  (Australia / US). No attribution is legally required; the Asset Register records the
+  source for every one regardless.
+- **`maryLee.jpg` is CC BY 2.0** — the one portrait that is not public domain.
+  - **Required attribution:** "Portrait of Mary Lee (1885) courtesy of the State
+    Library of South Australia, licensed under CC BY 2.0, via Wikimedia Commons."
+- **`williamBarak.jpg`** (Carl Walter, 1866; PD-Australia) additionally carries a
+  First Nations cultural note — see the Asset Register.
+- **James Ruse has no portrait**: no authenticated likeness of him is known to exist,
+  so he renders text-only rather than carrying a misattributed image.
 
 ---
 

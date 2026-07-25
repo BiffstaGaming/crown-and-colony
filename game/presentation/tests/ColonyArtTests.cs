@@ -73,4 +73,40 @@ public class ColonyArtTests
             ColonyArt.VariantArtRoot = prev;
         }
     }
+
+    /// <summary>
+    /// WS1.4: every Australian Pioneer resolves a portrait through the variant art seam — a renamed, missing or
+    /// un-imported file fails here rather than silently rendering the Pioneer text-only in the Convention dialog.
+    /// <b>James Ruse is the one deliberate exception</b>: no authenticated likeness of him is known to exist, so he
+    /// renders text-only rather than carrying a misattributed image (recorded in the Asset Register). He is asserted
+    /// <em>absent</em> so that adding a file for him without the provenance work also trips this test.
+    /// </summary>
+    [TestCase]
+    public void EveryAustralianPioneerPortrait_LoadsUnderTheAustraliaRoot_ExceptJamesRuse()
+    {
+        string[] pioneers =
+        [
+            "arthurPhillip", "carolineChisholm", "catherineHelenSpence", "charlesSturt", "charlesTodd",
+            "edmundBarton", "edwardHargraves", "elizabethMacarthur", "georgeFifeAngas", "henryParkes",
+            "johnMcDouallStuart", "johnQuick", "lachlanMacquarie", "louisaLawson", "ludwigLeichhardt",
+            "maryLee", "maryReibey", "matthewFlinders", "peterLalor", "samuelGriffith",
+            "sidneyKidman", "thomasSutcliffeMort", "williamBarak", "williamJervois",
+        ];
+
+        string? prev = ColonyArt.VariantArtRoot;
+        try
+        {
+            ColonyArt.VariantArtRoot = "australia";
+            foreach (string pioneer in pioneers)
+            {
+                AssertThat(ColonyArt.FatherPortrait(pioneer)).OverrideFailureMessage(
+                    $"Australian Pioneer portrait '{pioneer}.jpg' did not load from res://assets/australia/fathers/").IsNotNull();
+            }
+            AssertThat(ColonyArt.FatherPortrait("jamesRuse")).IsNull(); // no authenticated likeness exists — text-only by design
+        }
+        finally
+        {
+            ColonyArt.VariantArtRoot = prev;
+        }
+    }
 }
