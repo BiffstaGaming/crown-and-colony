@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — Remaining-work audit (what's left before the game is finished)
+
+**Requested (Chris):** "Update me on what tasks we have left to do before this Game is finished."
+**Did:**
+- **Audited the true remaining scope** against the kanban (list `901615382059`), `ROAD_TO_100.md`, and the live code — no new game code written. The base/classic game and the P7 release-readiness stream are complete; **everything left is the Australian variant (P8), plus a release wrapper.**
+- **Verified four kanban items that claimed "backlog" are actually shipped** and corrected them: WS1.1b event-choice popup (`game/presentation/EventChoicePanel.cs` exists and consumes `PendingEventOffer`), WS1.2 Commonwealth victory screen (`VictoryPanel.cs` is Federation-aware), WS1.3 variant art seam (`ColonyArt.cs:226` resolves `res://assets/<variant>/…` with FreeCol fallback), WS6.1 distinct goods (complete as of `0676c55`).
+- **Confirmed the one big verified gap in WS1:** portraits — `game/assets/australia/fathers/` still holds only `williamBarak.jpg`; **24 of 25 Pioneers render blank.** That is the single largest visual deficit in the mode.
+- Produced the grouped remaining-work list (unblocked-autonomous / Chris-gated / release) in the chat reply.
+**Status:** No code change; no build/test run needed. 4 ClickUp statuses corrected. Docs/kanban now agree with code on those four.
+**Changed:** ClickUp tasks `86d3n7tya`, `86d3n7tyf`, `86d3n7tyq`, `86d3n7u0c` → Shipped. `PostWorkSummary.md` (this entry).
+**Decisions:** corrected the stale board rather than reporting around it — a board that lists shipped work as to-do is the main reason past sessions nearly rebuilt finished features.
+**Scheduled next:** **WS1.4 — the 24 missing Pioneer portraits** (`86d3n855a` covers the Barak sign-off; the other 24 are public-domain sourcing I take myself). Biggest single visual win and fully unblocked.
+**Follow-ups:** WS6.2 economic units (`86d3n7u0d`); WS6.7 Australian L4 goldens (`86d3n7u0x`); WS2.1/2.2 art direction + title art (`86d3n7tz9`, `86d3n7tzc`); WS3.4 victory grades (`86d3ntj53`); WS4.5 truth-telling log (`86d3n7u08`).
+**Needs you:** the two long-standing gates only — **First Nations direction (ADR-022 / ICIP consultation, all of WS5 + WS2.6)** and the **4c.11 sensitive-text sign-off**. Optional: a playtest toward 1901 (WS6.6) and whether "Crown & Colony" survives the trademark search.
+
+---
+
 ## 2026-07-15 — 10-item run: WS6.1 COMPLETE (Gold + Wool promotions, pastoral chain) + the Australian soak
 
 **Requested (Chris):** "Do the next 10 items." (Ran under the batch rules: batch tests by file, push at boundaries, decide rather than ask.)
