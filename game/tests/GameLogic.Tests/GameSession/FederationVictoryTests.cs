@@ -649,7 +649,7 @@ public class FederationVictoryTests
     // ─────────────────────────────── persistence (v72, omit-when-default) ───────────────────────────────
 
     [Fact]
-    public void SaveVersion_IsCurrent() => Assert.Equal(75, SaveGame.CurrentVersion);
+    public void SaveVersion_IsCurrent() => Assert.Equal(76, SaveGame.CurrentVersion);
 
     [Fact]
     public void ClassicSave_OmitsEveryFederationToken()

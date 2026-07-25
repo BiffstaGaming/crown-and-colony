@@ -1303,8 +1303,14 @@ public sealed partial class Game
         {
             throw new InvalidMoveException($"Not enough gold to buy this land (need {price}).");
         }
+        string? paidNation = Map.NativeOwnerOf(tile); // recorded before the claim clears ownership (WS5.3 Respect)
         player.Gold -= price; // FreeCol credits the native owner; we keep no native treasury, so the gold simply leaves
         Map.ClaimFromNatives(tile);
+        if (paidNation is not null && player.IsHuman)
+        {
+            // WS5.3 (doc 18): dealing fairly for Country earns Respect. Australia-only — a no-op in classic (ADR-009).
+            ChangeFirstNationsRespect(paidNation, RespectLandPaid);
+        }
     }
 
     /// <summary>Takes the native-owned <paramref name="tile"/> for the human by force: no gold changes hands, but the robbed nation's settlements gain <see cref="LandTakenAlarm"/> alarm.</summary>
@@ -1324,6 +1330,12 @@ public sealed partial class Game
         foreach (NativeSettlement settlement in _nativeSettlements.Where(s => s.NationTypeId == nation))
         {
             ChangeNativeAlarm(settlement, player.PlayerId, Ruleset.Difficulty.NativeTension.LandTaken); // FreeCol TENSION_ADD_LAND_TAKEN toward the robber, nation-wide (ownership is tracked per nation)
+        }
+        if (player.IsHuman)
+        {
+            // WS5.3 (doc 18: "Seizure of land"): taking Country destroys Respect as well as raising alarm — the two axes
+            // move together here but recover differently (alarm decays; Respect must be earned back). Classic: no-op.
+            ChangeFirstNationsRespect(nation, RespectLandSeized);
         }
     }
 
@@ -8436,6 +8448,7 @@ public sealed partial class Game
         ResolveCommonwealthFederation(); // Australia (Phase-4a): a carried referendum proclaims the Commonwealth — no-op in classic (Federation victory off)
         RunSpanishSuccession();     // from 1600, a fading European AI is absorbed by the dominant one (P6)
         ApplyAmbientNativeAlarm();   // natives resent the human's nearby colonies/troops (FreeCol csNewTurn) — before the calm-down
+        ApplyFirstNationsPressureTension(); // WS5.3: Country Pressure + low Respect keep pressing (Australia-only; classic no-op)
         ProcessMissions();           // missions accrue converts on the alarm this turn produced (FreeCol csStartTurn) — before the decay
         foreach (NativeSettlement settlement in _nativeSettlements)
         {

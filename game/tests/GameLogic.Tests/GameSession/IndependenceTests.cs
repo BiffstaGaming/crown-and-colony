@@ -2098,7 +2098,7 @@ public class IndependenceTests
         // enabled and the REF wave/morale state defaulted (countdown 0, morale 0) — byte-compatible down-version load.
         Game game = Game.New(Classic, Seed);
         SaveGame v62 = SaveGame.From(game);
-        Assert.Equal(75, v62.Version); // current version (the v62 down-version logic below still holds — a fresh game omits the later fields too)
+        Assert.Equal(76, v62.Version); // current version (the v62 down-version logic below still holds — a fresh game omits the later fields too)
 
         // Simulate an older save: stamp the version back and drop the v62 fields (they were all omitted/default anyway).
         SaveGame asV61 = v62 with { Version = 61, VictoryConditionsDisabled = null, RefWaveCountdown = null, RefMoralePeak = null };

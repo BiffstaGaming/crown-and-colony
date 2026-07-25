@@ -21,7 +21,7 @@ namespace CrownAndColony.GameLogic.Persistence;
 public sealed record SaveGame
 {
     /// <summary>Current save format version.</summary>
-    public const int CurrentVersion = 75;
+    public const int CurrentVersion = 76;
 
     /// <summary>
     /// Save format version. v1 lacked <see cref="Explored"/> and unit type ids;
@@ -640,6 +640,15 @@ public sealed record SaveGame
     /// </summary>
     public IReadOnlyList<string>? DraftedConstitutionClauses { get; init; }
 
+    /// <summary>
+    /// <b>First Nations Respect</b> (v76, WS5.3; <see cref="Game.FirstNationsRespect"/>): native nation type id → the Respect
+    /// that people holds toward the human, 0–100. Persisted because Respect is a record of past conduct and cannot be
+    /// re-derived from the board (unlike Country Pressure, which is derived). Additive + <b>omitted when empty</b> — a classic
+    /// game (the Australian relationship model is off) and an Australia game that has met nobody bank none — so a default game
+    /// is byte-identical to v75 and a pre-v76 save loads with no relationships. Sorted by key for a deterministic order.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? FirstNationsRespect { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -920,6 +929,9 @@ public sealed record SaveGame
             // The drafted constitutional clauses (v74, WS3.3) — in draft order; omitted when empty (classic + a no-clause
             // Australia game draft none, byte-identical to v73).
             DraftedConstitutionClauses = game.DraftedClauses.Count > 0 ? game.DraftedClauses.ToList() : null,
+            FirstNationsRespect = game.FirstNationsRespect.Count > 0
+                ? game.FirstNationsRespect.OrderBy(kv => kv.Key, StringComparer.Ordinal).ToDictionary(kv => kv.Key, kv => kv.Value)
+                : null,
         };
     }
 
@@ -1219,6 +1231,13 @@ public sealed record SaveGame
             foreach (string clauseId in clauses)
             {
                 game.SetDraftedClause(clauseId);
+            }
+        }
+        if (FirstNationsRespect is { } respect) // v76 (WS5.3); pre-v76 / omitted → no relationships on record
+        {
+            foreach (KeyValuePair<string, int> entry in respect)
+            {
+                game.SetFirstNationsRespect(entry.Key, entry.Value);
             }
         }
         return game;
