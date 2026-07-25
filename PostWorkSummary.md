@@ -19,6 +19,26 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — WS5.3: the First Nations relationship model (mechanics) + ADR-022 drafted
+
+**Requested (Chris):** "So get onto the First Nations depth."
+**Interpretation I took (say if it's wrong):** the **mechanics-first path (option B from the brief)** — build the system now, hold every piece of *representational content* until ADR-022 is signed off. I did not treat "get onto it" as authorising cultural content about living peoples; that stays yours.
+**Did:**
+- **Shipped the designed three-axis model** (doc 18), replacing the inherited single-axis alarm:
+  - **Respect** — persisted (save **v76**), per people, 0–100, seeded at **35** on contact (wary, not hostile). Paying for land earns **+5**; seizing it destroys **−12**. The asymmetry is deliberate: trust is easier to break than build.
+  - **Country Pressure** — **derived**, not accumulated, 0–100 from the live colonial footprint. Chose derived so **withdrawal genuinely relieves pressure** (doc 18 asks for exactly that) and so it costs no save state.
+  - **Tension** — the existing alarm engine kept and reused (so everything built on it still works), read on a 0–100 scale and now **fed each turn** by Country Pressure (25%) and low Respect (+10 at ≤25).
+- **The bit that actually changes play:** under the old model you could occupy a people's Country for a century and, with no soldier adjacent and a missionary parked, nothing registered. Now the **footprint itself keeps pressing** and a relationship you've degraded keeps degrading. Doc 18's **seven relationship states** derive from all three axes, evaluated **Tension-first** — banked goodwill can't paper over current pressure.
+- **Drafted ADR-022** (ClickUp doc 02, page `2kz0t3mf-4236`) — the decision record, with the mechanics as Part 1 (ratify/amend) and *all* content as Part 2 (blocked). It states plainly that naming the consultation process **is not a software decision and I shouldn't make it**.
+**Status:** **L1/L2 3025 green** (0 failed, incl. 18 new), **soak 6/6 green**, **CI ✓ both jobs incl. L3/L4 Godot** (run `30174578917`). Pushed `fda7942`.
+**Changed:** `Game.FirstNations.cs` (new), hooks in `Game.cs` (land-claim paths + `EndTurn`), `SaveGame.cs` (v76), `FirstNationsRelationsTests.cs` (new, 18 L1), 42 save-version pins bulk-updated, `docs/systems/first-nations-relations.md` (new, both layers), `save-load.md` changelog. ClickUp `86d3u5x2f` (In Review).
+**Decisions:** Respect persisted / Country Pressure derived (only conduct needs memory); Tension reuses the alarm engine rather than forking it; Tension outranks Respect in state resolution; classic gated off entirely on `VictoryFederation` → byte-identical.
+**Scheduled next:** **WS6.2 — distinct economic units (`86d3n7u0d`)** — still the best unblocked item while ADR-022 is with you.
+**Follow-ups:** WS5.4 Agreements (the payoff this layer exists for — content-gated); broaden the Respect hooks (trade, gifts, violence) and Country Pressure sources (roads/rail/mines need a tile-improvement ownership read the map model lacks); move the Commonwealth scorecard's First Nations category onto the new states once Agreements land.
+**Needs you:** **ADR-022 sign-off** — three things: (1) ratify or amend the mechanics/magnitudes, (2) name the consultation/review process for content, (3) decide the fallback if consultation isn't arranged. The **Treaty Commonwealth** grade stays withheld until Agreements exist.
+
+---
+
 ## 2026-07-26 — WS1.4: the Pioneer portraits are in (24 of 25) + a decision brief
 
 **Requested (Chris):** "Download public-domain images. Give me exact information on what you need decisions from me, provide info on what the pro/con's are. I haven't looked at this project for weeks."
