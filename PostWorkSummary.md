@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — First Nations text: eight draft entries for Chris to read
+
+**Requested (Chris):** "I'm not understanding anything you're asking." → then chose **"I write it, you read it"** for the First Nations content question.
+**Did:**
+- **Dropped the jargon.** The previous two summaries were unreadable to Chris (workstream codes, ADR numbers, byte-stability). Re-asked the one real question in plain English with four concrete options; he picked *I draft it, he reviews it before it ships*.
+- **Wrote the first content drop for review:** [FIRST_NATIONS_TEXT_FOR_REVIEW.md](docs/australian_federation_mode_md/FIRST_NATIONS_TEXT_FOR_REVIEW.md) — an encyclopedia entry (45–70 words each) for each of the **eight First Nations peoples already in the game data** (Eora, Kulin, Noongar, Wangkatja, Larrakia, Yolŋu, Yawuru, Arrernte). Those eight currently render **a bare name and nothing else**, while every building, unit and good in the game has an entry — so this was the highest-value content gap.
+- **Wrote down the rules I held myself to**, since Chris is the only reviewer: documented public facts only; present tense (these peoples exist now); **no sacred, ceremonial or restricted material**; no invented individuals or dialogue; colonisation stated plainly but not dwelt on.
+- **Flagged one entry for a hard look** — Eora is the only one naming a death event (the 1789 smallpox epidemic). Included because omitting it would misrepresent the exact place and decade the game opens in, but called out as a one-line change if Chris wants it softened.
+- **Deliberately excluded** from this drop: all imagery; the ~11 further peoples in doc 16 who aren't in the game data yet; and the doc-16 **resistance-event chains** (Pemulwuy etc.) — those dramatise frontier killing and want a per-item yes, not bundling.
+**Status:** Nothing wired into the game — this is the reading step, by Chris's own choice. No code change, so no test/CI impact. Pushed `6d21198`.
+**Changed:** `docs/australian_federation_mode_md/FIRST_NATIONS_TEXT_FOR_REVIEW.md` (new).
+**Decisions:** drafted only for peoples already in the data (no point writing content for groups that don't exist yet); held resistance events back for separate sign-off.
+**Scheduled next:** on Chris's yes — wire the eight entries into the Australia spec with tests and docs. If he'd rather not decide now, **WS6.2 distinct economic units (`86d3n7u0d`)** is the next unblocked item either way.
+**Follow-ups:** the remaining First Nations items (agreements, artwork, the further peoples) stay queued behind this same read-then-ship loop.
+**Needs you:** **read the eight entries** and reply "yes", "change X", or "get someone qualified first". That's the whole ask.
+
+---
+
 ## 2026-07-26 — WS5.3: the First Nations relationship model (mechanics) + ADR-022 drafted
 
 **Requested (Chris):** "So get onto the First Nations depth."
