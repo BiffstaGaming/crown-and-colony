@@ -759,6 +759,73 @@ public class AustralianContentTests
         return save.Restore(Australia);
     }
 
+    // ─────────────────────────── WS6.2 expert workers for the Australian goods ───────────────────────────
+
+    /// <summary>
+    /// Every distinct Australian good that a <b>colonist actually works</b> has an expert who doubles it, exactly as every
+    /// classic good does. Before WS6.2 the whole WS6.1 economy — Copper, Coal, Sandalwood, Meat, Frozen Meat — could only
+    /// ever be worked by generalists, which quietly made the Australian economy strictly worse than the classic one.
+    /// </summary>
+    [Theory]
+    [InlineData("model.goods.copper", "model.unit.expertCopperMiner")]
+    [InlineData("model.goods.coal", "model.unit.expertCoalMiner")]
+    [InlineData("model.goods.sandalwood", "model.unit.expertSandalwoodCutter")]
+    [InlineData("model.goods.meat", "model.unit.masterButcher")]
+    [InlineData("model.goods.frozenMeat", "model.unit.masterFreezingWorker")]
+    public void EachWorkedAustralianGood_HasAnExpertWhoDoublesIt(string goodsId, string unitId)
+    {
+        UnitType expert = Australia.Unit(unitId);
+
+        Assert.Equal(goodsId, expert.ExpertProduction);
+        Assert.NotNull(expert.ProductionModifiers);
+        Assert.Contains(expert.ProductionModifiers!, m => m.GoodsId == goodsId && m.Value == 2);
+    }
+
+    /// <summary>
+    /// <b>Cattle deliberately has no expert.</b> It BREEDS in the colony like horses rather than being produced by a
+    /// worker, so an <c>expert-production</c> unit could never boost it — an expert Drover would be a unit that silently
+    /// does nothing. Guarded so a future "complete the set" pass doesn't add one without changing how cattle is produced.
+    /// </summary>
+    [Fact]
+    public void Cattle_HasNoExpert_BecauseItBreedsRatherThanBeingWorked()
+    {
+        Assert.DoesNotContain(Australia.UnitTypes, u => u.ExpertProduction == "model.goods.cattle");
+    }
+
+    /// <summary>
+    /// The new experts are wired into the same plumbing as every other expert: each carries a teachable skill tier and
+    /// each can have that skill <b>cleared</b> back to a free colonist. A unit type with <c>expert-production</c> but no
+    /// clear-skill change would be a one-way trap — the colonist could never be repurposed.
+    /// </summary>
+    [Theory]
+    [InlineData("model.unit.expertCopperMiner", 1)]
+    [InlineData("model.unit.expertCoalMiner", 1)]
+    [InlineData("model.unit.expertSandalwoodCutter", 1)]
+    [InlineData("model.unit.masterButcher", 2)]
+    [InlineData("model.unit.masterFreezingWorker", 2)]
+    public void EachNewExpert_CarriesATeachableSkill_AndCanBeClearedBackToAColonist(string unitId, int expectedSkill)
+    {
+        Assert.Equal(expectedSkill, Australia.Unit(unitId).Skill);
+
+        UnitChange? cleared = Australia.GetUnitChange("model.unitChange.clearSkill", unitId);
+        Assert.NotNull(cleared);
+        Assert.Equal("model.unit.freeColonist", cleared!.To);
+    }
+
+    /// <summary>The new expert unit types are <b>Australia-only</b> — the classic ruleset must not grow them (ADR-009 in spirit).</summary>
+    [Fact]
+    public void ClassicRuleset_HasNoneOfTheAustralianExperts()
+    {
+        foreach (string id in new[]
+                 {
+                     "model.unit.expertCopperMiner", "model.unit.expertCoalMiner", "model.unit.expertSandalwoodCutter",
+                     "model.unit.masterButcher", "model.unit.masterFreezingWorker",
+                 })
+        {
+            Assert.DoesNotContain(Classic.UnitTypes, u => u.Id == id);
+        }
+    }
+
     // ─────────────────────────── First Nations encyclopedia text (approved by Chris 2026-07-26) ───────────────────────────
 
     /// <summary>

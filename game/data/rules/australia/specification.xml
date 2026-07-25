@@ -1573,6 +1573,22 @@
       <unit-type-change id="model.unitChange.clearSkill.masterCarpenter"
                         from="model.unit.masterCarpenter"
                         to="model.unit.freeColonist" probability="100"/>
+      <!-- WS6.2 Australian experts -->
+      <unit-type-change id="model.unitChange.clearSkill.expertCopperMiner"
+                        from="model.unit.expertCopperMiner"
+                        to="model.unit.freeColonist" probability="100"/>
+      <unit-type-change id="model.unitChange.clearSkill.expertCoalMiner"
+                        from="model.unit.expertCoalMiner"
+                        to="model.unit.freeColonist" probability="100"/>
+      <unit-type-change id="model.unitChange.clearSkill.expertSandalwoodCutter"
+                        from="model.unit.expertSandalwoodCutter"
+                        to="model.unit.freeColonist" probability="100"/>
+      <unit-type-change id="model.unitChange.clearSkill.masterButcher"
+                        from="model.unit.masterButcher"
+                        to="model.unit.freeColonist" probability="100"/>
+      <unit-type-change id="model.unitChange.clearSkill.masterFreezingWorker"
+                        from="model.unit.masterFreezingWorker"
+                        to="model.unit.freeColonist" probability="100"/>
       <unit-type-change id="model.unitChange.clearSkill.masterDistiller"
                         from="model.unit.masterDistiller"
                         to="model.unit.freeColonist" probability="100"/>
@@ -1681,6 +1697,28 @@
                         from="model.unit.freeColonist"
                         to="model.unit.masterCarpenter"
                         probability="100" turns="4"/>
+      <!-- WS6.2 Australian experts: skill-1 tile workers train in 4 turns, skill-2 building masters in 6, matching
+           the classic cadence (expertOreMiner 4 / masterDistiller 6). -->
+      <unit-type-change id="model.unitChange.education.expertCopperMiner"
+                        from="model.unit.freeColonist"
+                        to="model.unit.expertCopperMiner"
+                        probability="100" turns="4"/>
+      <unit-type-change id="model.unitChange.education.expertCoalMiner"
+                        from="model.unit.freeColonist"
+                        to="model.unit.expertCoalMiner"
+                        probability="100" turns="4"/>
+      <unit-type-change id="model.unitChange.education.expertSandalwoodCutter"
+                        from="model.unit.freeColonist"
+                        to="model.unit.expertSandalwoodCutter"
+                        probability="100" turns="4"/>
+      <unit-type-change id="model.unitChange.education.masterButcher"
+                        from="model.unit.freeColonist"
+                        to="model.unit.masterButcher"
+                        probability="100" turns="6"/>
+      <unit-type-change id="model.unitChange.education.masterFreezingWorker"
+                        from="model.unit.freeColonist"
+                        to="model.unit.masterFreezingWorker"
+                        probability="100" turns="6"/>
       <unit-type-change id="model.unitChange.education.masterDistiller"
                         from="model.unit.freeColonist"
                         to="model.unit.masterDistiller"
@@ -2015,6 +2053,46 @@
                price="600" skill="1" expert-production="model.goods.ore"
                recruit-probability="1" score-value="4">
       <modifier id="model.goods.ore" index="30"
+                type="multiplicative" value="2"/>
+    </unit-type>
+
+    <!-- ============================================================================================================
+         WS6.2 — Australian expert workers for the WS6.1 goods.
+         The distinct Australian goods (Copper, Coal, Sandalwood, Meat, Frozen Meat) shipped with NO specialists, so
+         the whole Australian economy could only ever be worked by generalists while every classic good had an expert.
+         Each doubles its good exactly like the classic experts (multiplicative x2 at index 30).
+         Gold and Wool already have experts — the Digger and Shepherd (renamed silver/cotton experts).
+         CATTLE deliberately has none: it BREEDS in the colony like horses rather than being worked by a colonist, so
+         an expert-production unit could never boost it.
+         ============================================================================================================ -->
+    <unit-type id="model.unit.expertCopperMiner" extends="colonist"
+               price="650" skill="1" expert-production="model.goods.copper"
+               recruit-probability="1" score-value="4">
+      <modifier id="model.goods.copper" index="30"
+                type="multiplicative" value="2"/>
+    </unit-type>
+    <unit-type id="model.unit.expertCoalMiner" extends="colonist"
+               price="550" skill="1" expert-production="model.goods.coal"
+               recruit-probability="1" score-value="4">
+      <modifier id="model.goods.coal" index="30"
+                type="multiplicative" value="2"/>
+    </unit-type>
+    <unit-type id="model.unit.expertSandalwoodCutter" extends="colonist"
+               price="700" skill="1" expert-production="model.goods.sandalwood"
+               recruit-probability="1" score-value="4">
+      <modifier id="model.goods.sandalwood" index="30"
+                type="multiplicative" value="2"/>
+    </unit-type>
+    <unit-type id="model.unit.masterButcher" extends="colonist"
+               price="1000" skill="2" expert-production="model.goods.meat"
+               recruit-probability="1" score-value="4">
+      <modifier id="model.goods.meat" index="30"
+                type="multiplicative" value="2"/>
+    </unit-type>
+    <unit-type id="model.unit.masterFreezingWorker" extends="colonist"
+               price="1300" skill="2" expert-production="model.goods.frozenMeat"
+               recruit-probability="1" score-value="4">
+      <modifier id="model.goods.frozenMeat" index="30"
                 type="multiplicative" value="2"/>
     </unit-type>
     <unit-type id="model.unit.masterSugarPlanter" extends="colonist"

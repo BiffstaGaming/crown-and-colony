@@ -287,6 +287,13 @@ public static class GameVariants
             // goods: the Australian spec re-points their expert-production to model.goods.gold / model.goods.wool.
             ["expertSilverMiner"] = "Digger",        // the Gold specialist
             ["masterCottonPlanter"] = "Shepherd",    // the Wool specialist
+            // WS6.2 — the experts for the distinct Australian goods. These are NEW unit types (not reskins), so the
+            // override is only shortening the derived name to the Australian trade term a player would recognise.
+            ["expertCopperMiner"] = "Copper Miner",
+            ["expertCoalMiner"] = "Coal Miner",
+            ["expertSandalwoodCutter"] = "Sandalwood Cutter",
+            ["masterButcher"] = "Butcher",
+            ["masterFreezingWorker"] = "Freezing Works Hand",
             // ── Buildings (86d3mm25r) ──
             ["depot"] = "Government Stores",
             ["weaverHouse"] = "Wool Shed",           // cotton→cloth processing = wool processing

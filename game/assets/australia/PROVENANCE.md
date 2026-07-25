@@ -44,6 +44,24 @@ Bespoke Australian goods art is a WS2 art-pass follow-up.
 
 ---
 
+
+## WS6.2 expert-unit icons (`units/<shortName>.png`)
+
+Interim placeholders for the five Australian expert workers added with WS6.2, copied unmodified from our own FreeCol
+art (`game/assets/freecol/units/`) — **GPL v2 → GPL v2**, © The FreeCol Team, so no new licence obligation. Each is a
+stand-in with the right *silhouette* for the trade, not a bespoke sprite; they are replaced by the WS2.4 unit-art pass.
+
+| File | Copied from | Why that source |
+|---|---|---|
+| `expertCopperMiner.png` | `freecol/units/expertOreMiner.png` | a miner reads as a miner |
+| `expertCoalMiner.png` | `freecol/units/expertOreMiner.png` | same trade, same silhouette |
+| `expertSandalwoodCutter.png` | `freecol/units/expertLumberJack.png` | a timber-getter with an axe |
+| `masterButcher.png` | `freecol/units/masterDistiller.png` | an apron-and-barrel processing worker |
+| `masterFreezingWorker.png` | `freecol/units/masterDistiller.png` | as above |
+
+Copper and Coal deliberately share one source and Butcher/Freezing-Works Hand share another: the two pairs are the same
+trade at different tiers, and inventing a spurious visual difference between them would be worse than the honest reuse.
+
 ## Pioneer portraits (`fathers/<shortName>.jpg`, target 200×237)
 
 The head-and-shoulders portrait shown beside each Australian Pioneer in the
