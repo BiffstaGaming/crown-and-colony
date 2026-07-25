@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — First Nations entries approved and now in the game
+
+**Requested (Chris):** "Yes, move on with this" — approving the eight draft encyclopedia entries.
+**Did:**
+- **Put all eight entries in the game, unchanged** — Eora, Kulin, Noongar, Wangkatja, Larrakia, Yolŋu, Yawuru, Arrernte. Each now has its Country and a ~50-word entry.
+- **Found and fixed a bigger gap than expected while wiring it up:** these peoples weren't just missing descriptions — they **weren't listed in the in-game encyclopedia at all**. That screen only ever walked the European powers. There's now a **First Nations** heading on it.
+- **Corrected a spelling.** The game was rendering "Yolngu" because the internal code name has to be plain ASCII. Added a way for a people's name to be spelled properly on screen independently of the code name, so it now reads **Yolŋu**. Small thing, but it's their name.
+- **Guarded it so it can't quietly rot:** tests now fail if any people loses its entry, if an entry stops using the present tense (these peoples exist now — that was a rule of the draft, so it's enforced, not just intended), and if the classic American game ever grows this section by accident.
+**Status:** **3035 tests green** (0 failed, 12 new), determinism check 6/6 green, **CI green on both jobs including the on-screen tests**. Pushed.
+**Changed:** the Australia rules file (the eight entries), `NativeNationType.cs` + ruleset parsing (three new optional fields), `ColopediaPanel.cs` (the new section), `AustralianContentTests.cs` (+10), `ColopediaPanelTests.cs` (+2), `docs/systems/first-nations-relations.md`, and the review doc marked approved and kept as the provenance record.
+**Decisions:** kept the review document rather than deleting it — it records what was written, why, and what was left out, which is the thing you'd want if anyone ever asks.
+**Scheduled next:** **the Australian trade goods still have no expert workers** (`86d3n7u0d`) — the gold, wool, coal, cattle and meat added a fortnight ago have no specialists who are good at producing them. That's the next unblocked job.
+**Follow-ups:** still not written, and each needs its own yes from you — artwork of any kind; the other ~11 peoples from the design docs who aren't in the game yet; the "resistance event" storylines (Pemulwuy and similar), which dramatise frontier killing.
+**Needs you:** nothing right now. Next time you want any of the three follow-ups above, say which and I'll draft it the same way — write it, you read it, then it ships.
+
+---
+
 ## 2026-07-26 — First Nations text: eight draft entries for Chris to read
 
 **Requested (Chris):** "I'm not understanding anything you're asking." → then chose **"I write it, you read it"** for the First Nations content question.
