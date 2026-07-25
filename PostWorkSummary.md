@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — Two more items, no review needed: Australian expert workers + the Treaty grade fixed
+
+**Requested (Chris):** "Keep working through the items without my review/assistance."
+**Did — two items, both green:**
+
+**1. The Australian trade goods finally have expert workers.** Copper, Coal, Sandalwood, Meat and Frozen Meat shipped a fortnight ago with **no specialists at all** — so every one of them could only be worked by a generalist, while every classic good had an expert who doubles output. That was a quiet handicap on the entire Australian economy: the variant's own industries were strictly worse to run than the ones they replaced. Added five experts (**Copper Miner, Coal Miner, Sandalwood Cutter, Butcher, Freezing Works Hand**), each doubling its good, teachable in schools at the classic pace, and able to have the skill cleared again so none is a one-way trap.
+- **Cattle deliberately gets none** — it *breeds* in the colony like horses rather than being worked by a colonist, so an expert could never boost it. A "Drover" would have been a unit that silently does nothing. There's a test guarding against someone adding one later without changing how cattle works.
+
+**2. Fixed the flaw that forced me to withhold the Treaty grade — and unlocked it.** The end-of-game score for First Nations relations measured only *harm avoided*, so a player who never encountered First Nations at all scored a perfect 100. That's why the rarest grade shipped disabled. It now scores **half on Respect actually earned** (which starts at zero and only moves when you deal fairly) and half on harm avoided, with peoples you never contacted counting as zero rather than a free pass. So the score has to be played for — and the **Treaty Commonwealth grade is now live**. Guarded both ways: an untouched board scores under the bar and is refused the grade; a board with trust earned from every people gets it.
+**Status:** **3049 tests green** (0 failed, 14 new), determinism 6/6, **CI green both jobs**. One CI red on the way was the known scene-host startup flake (results file recorded zero tests run, not a failure) — reran, green. Pushed `c87bd8a` + `14a31f3`.
+**Changed:** the Australia rules file (5 unit types + their education/skill-clearing entries), `GameVariant.cs` (names), 5 placeholder unit icons + provenance, `Game.CommonwealthGrade.cs`, `AustralianContentTests.cs` (+12), `CommonwealthGradeTests.cs` (+2), `market.md`, `education-schools.md`, `federation-victory.md`, `first-nations-relations.md`.
+**Decisions:** no Cattle expert (would be inert); unit icons are honest GPL placeholders reusing FreeCol art, with the two mining and two processing roles sharing a source rather than inventing a fake visual difference; unlocked Treaty myself since the reason for withholding it no longer holds.
+**Scheduled next:** **Australian visual identity** — the map and units still look American-colonial with Australian captions. Starting with the theme/palette, which is code rather than sourced art.
+**Follow-ups:** Australian visual goldens for the test suite; the three First Nations content items still needing your yes (artwork, the further peoples, the resistance-event storylines).
+**Needs you:** nothing.
+
+---
+
 ## 2026-07-26 — First Nations entries approved and now in the game
 
 **Requested (Chris):** "Yes, move on with this" — approving the eight draft encyclopedia entries.
