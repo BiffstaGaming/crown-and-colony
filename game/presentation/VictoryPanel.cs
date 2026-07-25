@@ -99,6 +99,13 @@ public partial class VictoryPanel : PanelContainer
         }
         dynamic.AddChild(new HSeparator());
 
+        // ── The Commonwealth grade + its six-category scorecard (WS3.4) ───────────────────────────────────
+        if (IsFederationVictory)
+        {
+            AddCommonwealthScorecard(dynamic);
+            dynamic.AddChild(new HSeparator());
+        }
+
         // ── Final score, itemised (the winner's PlayerScore broken down) ──────────────────────────────────
         ScoreComponents s = _game.ScoreBreakdown(winner);
         dynamic.AddChild(new Label { Name = "ScoreHeader", Text = $"— Final score: {s.Total} —" });
@@ -149,6 +156,48 @@ public partial class VictoryPanel : PanelContainer
         retire.Pressed += () => OnRetire?.Invoke();
         choices.AddChild(retire);
     }
+
+    /// <summary>
+    /// The graded Commonwealth end-card (WS3.4): the awarded <see cref="CommonwealthGrade"/> with the one-line reason it
+    /// was earned, then the six design-doc-20 categories as 0–100 readings. Pure presentation — every figure comes from
+    /// the <see cref="Game.CommonwealthScorecardForHuman"/> oracle (ADR-006).
+    /// </summary>
+    private void AddCommonwealthScorecard(VBoxContainer dynamic)
+    {
+        CommonwealthScorecard card = _game.CommonwealthScorecardForHuman();
+        dynamic.AddChild(new Label { Name = "GradeHeader", Text = $"— {GradeTitle(card.Grade)} —" });
+        dynamic.AddChild(Wrapped("GradeBlurb", GradeBlurb(card.Grade)));
+        dynamic.AddChild(new Label { Name = "ScorecardHeader", Text = $"    Commonwealth scorecard: {card.Total}/600" });
+        ScoreLine(dynamic, "GradeFederation", "Federation", card.Federation);
+        ScoreLine(dynamic, "GradeEconomy", "Economy", card.Economy);
+        ScoreLine(dynamic, "GradeCivic", "Civic reform", card.CivicReform);
+        ScoreLine(dynamic, "GradeFirstNations", "First Nations relations", card.FirstNations);
+        ScoreLine(dynamic, "GradeStability", "Stability", card.Stability);
+        ScoreLine(dynamic, "GradeBreadth", "Historical breadth", card.HistoricalBreadth);
+    }
+
+    /// <summary>The player-facing title of a <see cref="CommonwealthGrade"/> (design doc 05's grade names).</summary>
+    private static string GradeTitle(CommonwealthGrade grade) => grade switch
+    {
+        CommonwealthGrade.Stable => "Stable Commonwealth",
+        CommonwealthGrade.Reform => "Reform Commonwealth",
+        CommonwealthGrade.Economic => "Economic Commonwealth",
+        CommonwealthGrade.Treaty => "Treaty Commonwealth",
+        _ => "Bare Federation",
+    };
+
+    /// <summary>
+    /// The one-line reason a grade was awarded (doc 19 tone: sober, never triumphal — the Bare line in particular states
+    /// plainly what the settlement did not achieve rather than congratulating the player for scraping in).
+    /// </summary>
+    private static string GradeBlurb(CommonwealthGrade grade) => grade switch
+    {
+        CommonwealthGrade.Stable => "The colonies federated on solid ground: well built, well fed, and free of debt.",
+        CommonwealthGrade.Reform => "The colonies federated as a reforming nation — the vote widened, and civic life with it.",
+        CommonwealthGrade.Economic => "The colonies federated as one economy: diverse exports, deep infrastructure, a full treasury.",
+        CommonwealthGrade.Treaty => "The colonies federated with First Nations relations kept intact — the hardest way, and the rarest.",
+        _ => "The colonies federated, and no more than that: the union carried, but neither reform, prosperity, nor good faith with First Nations distinguished it.",
+    };
 
     private static void ScoreLine(VBoxContainer dynamic, string name, string label, int points) =>
         dynamic.AddChild(new Label { Name = name, Text = $"    {label}: {points}" });

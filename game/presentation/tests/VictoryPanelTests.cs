@@ -161,6 +161,53 @@ public class VictoryPanelTests
         AssertThat(dynamic.GetNode<Label>("VictoryAddendum").Text).Contains("Aboriginal and Torres Strait Islander");
     }
 
+    [TestCase]
+    public async Task FederationVictory_ShowsTheGradedCommonwealthScorecard()
+    {
+        // WS3.4: the Commonwealth win carries a GRADE and the six-category scorecard behind it (design docs 05/20). A
+        // freshly-proclaimed Commonwealth with nothing built lands on the "Bare Federation" floor — the end-card states
+        // that plainly rather than congratulating the player for scraping in.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        Game game = Game.New(GameVariants.Australia.LoadRuleset(), 0xC0FFEEUL, mapSource: MapSource.Australia);
+        typeof(Game).GetField("_federationPhase", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(game, FederationPhase.Commonwealth);
+        SetGame(controller, game);
+        SetVariant(controller, GameVariants.Australia);
+
+        controller.OpenVictoryPanel();
+        await runner.SimulateFrames(1);
+
+        var dynamic = controller.GetNode<VBoxContainer>("UI/VictoryPanel/VBox/Dynamic");
+        AssertThat(dynamic.GetNode<Label>("GradeHeader").Text).Contains("Bare Federation");
+        AssertThat(dynamic.GetNode<Label>("ScorecardHeader").Text).Contains("/600");
+        // All six doc-20 categories are itemised.
+        foreach (string category in new[]
+                 { "GradeFederation", "GradeEconomy", "GradeCivic", "GradeFirstNations", "GradeStability", "GradeBreadth" })
+        {
+            AssertThat(dynamic.GetNode<Label>(category)).IsNotNull();
+        }
+    }
+
+    [TestCase]
+    public async Task ClassicVictory_ShowsNoCommonwealthScorecard()
+    {
+        // ADR-009 / ADR-006: the graded end-card is Federation-only — a classic win must not grow one.
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        await runner.SimulateFrames(2);
+        var controller = (GameController)runner.Scene();
+
+        WinningGame(controller);
+        controller.OpenVictoryPanel();
+        await runner.SimulateFrames(1);
+
+        var dynamic = controller.GetNode<VBoxContainer>("UI/VictoryPanel/VBox/Dynamic");
+        AssertThat(dynamic.GetNodeOrNull<Label>("GradeHeader")).IsNull();
+        AssertThat(dynamic.GetNodeOrNull<Label>("ScorecardHeader")).IsNull();
+    }
+
     private static void SetVariant(GameController controller, GameVariant variant) =>
         controller.GetType().GetField("_variant", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(controller, variant);
