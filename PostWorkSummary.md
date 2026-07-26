@@ -19,6 +19,25 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-27 — Terrain, third attempt: changed the method, not the palette
+
+**Requested (Chris):** rejected all three earlier candidates — "those textures don't look very 'landy' or go well together."
+**Diagnosed both complaints to the same two causes rather than repainting again:**
+- **Not "landy":** ground looks like ground because it has structure at **several scales at once** — broad patches, mid-scale clumping, fine speckle. Everything I'd tried had exactly one: photographic grain (which averages into mud at 64px), or a single uniform wobble (which reads as fabric).
+- **Don't "go together":** I had picked every terrain colour **independently**. That is precisely the thing that makes a set clash.
+**Did — a different method:**
+- **Fractal (multi-octave) tileable noise** — the standard way to get organic ground. Seamless by construction: each octave's lattice wraps modulo its own resolution, so the pattern is continuous across tile edges.
+- **One harmonised palette.** Every terrain now defined in HSV inside a deliberately narrow shared family — land held to a warm 22–62° band, foliage 70–96°, water 198–212° — with saturation and value **spaced** rather than chosen ad hoc, plus a single warm light applied to everything so the map reads as one place under one sun.
+- Three characters on identical ground: **earth** (fine speckle), **patchy** (broad clumping — installed, recommended), **painted** (posterised). Plus a close-up of patchy so it can be judged at play zoom.
+**Status:** **3049 tests green**. Pushed.
+**Changed:** `tools/terrain_natural.py` (new), 40 tiles in the patchy style, four comparison captures.
+**Decisions:** treat this as a method problem, not a colour problem — the previous two rounds both failed by tweaking the wrong variable.
+**Honest ceiling, stated plainly:** procedural generation gets to "convincing ground". It will not reach *drawn* terrain art. If none of this batch lands either, the realistic options are commissioning or licensing a proper stylised top-down tileset — and that's a spend decision, not something I can iterate my way to.
+**Scheduled next:** Chris's pick (or a decision to commission), then the remaining isometric **entities** — settlements, units, resource icons.
+**Needs you:** pick one of D-earth / D-patchy / D-painted, or say none again and I'll price the commissioning route instead of guessing a fourth time.
+
+---
+
 ## 2026-07-26 — Whole continent + three terrain styles to choose from; two real bugs found
 
 **Requested (Chris):** the terrain looks really ugly; show the entire view of Australia; find 2–3 alternative terrain styles to compare and pick from.
