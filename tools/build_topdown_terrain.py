@@ -38,9 +38,44 @@ PLAN = {
     "swamp":     ("Ground048", 68, 1.0, 1.05),
     "hills":     ("Rock061",   22, 1.9, 1.25),   # grey rock -> red-brown
     "mountains": ("Rock061",   20, 1.8, 1.10),
-    # ocean / high seas / arctic / tundra deliberately absent: they fall back to the
-    # de-skewed FreeCol tile, which is fine for water and never appears for the polar types.
+    # arctic / tundra deliberately absent: they never appear on the Australia map, so they fall
+    # back to the de-skewed FreeCol tile.
 }
+
+# Water gets PROCEDURAL square tiles rather than sourced ones. ambientCG is a PBR material library
+# and has no usable sea texture (water is normally a shader, not an image), and the de-skewed
+# FreeCol ocean shows obvious diagonal wave artefacts in top-down — over a big share of the screen,
+# since the Australia map is mostly coastline. These are our own original work (GPL v2, no third-party
+# licence involved): tileable sinusoidal noise, so they are seamless by construction.
+# Kept DELIBERATELY subtle. A first attempt with a wide trough/crest range produced strong diagonal
+# banding that read worse than the artefacts it replaced — at strategy-map scale the sea should be a
+# near-flat colour with only a hint of movement, not a wave pattern.
+WATER = {
+    "ocean":    ((30, 68, 100), (35, 76, 110)),  # (trough, crest) — coastal sea
+    "highSeas": ((22, 52, 80), (26, 59, 89)),    # darker open ocean
+}
+
+def water_tile(dark, light, side=64, seed=0):
+    """A seamless 64px sea tile: a sum of sinusoids at INTEGER frequencies over the tile, so the
+    pattern wraps exactly at the edges and no seam can appear however it is tiled."""
+    import math
+    im = Image.new("RGBA", (side, side))
+    px = im.load()
+    # Mixed opposing diagonals + one axis-aligned term, so no single direction dominates and the
+    # result reads as mottling rather than as banding.
+    waves = [(1, 2, 0.34), (2, -1, 0.30), (3, 1, 0.20), (0, 3, 0.16)]  # (fx, fy, weight)
+    for y in range(side):
+        for x in range(side):
+            v = 0.0
+            for fx, fy, w in waves:
+                v += w * math.sin(2*math.pi*(fx*x/side + fy*y/side) + seed)
+            t = (v + 1.0) / 2.0
+            px[x, y] = (
+                int(dark[0] + (light[0]-dark[0])*t),
+                int(dark[1] + (light[1]-dark[1])*t),
+                int(dark[2] + (light[2]-dark[2])*t),
+                255)
+    return im
 
 def retone(im, target_hue, sat_mul, val_mul):
     im = im.convert("RGBA")
@@ -81,4 +116,13 @@ for terrain, (source, hue, sat, val) in PLAN.items():
         retone(Image.open(variant), hue, sat, val).save(os.path.join(d, f"top{idx}.png"))
         made += 1
     print(f"  {terrain:10} <- {source} (2 variants)")
+
+for terrain, (dark, light) in WATER.items():
+    d = os.path.join(DST, terrain)
+    os.makedirs(d, exist_ok=True)
+    for idx2 in (0, 1):
+        water_tile(dark, light, seed=idx2 * 1.7).save(os.path.join(d, f"top{idx2}.png"))
+        made += 1
+    print(f"  {terrain:10} <- procedural seamless water (2 variants)")
+
 print(f"\n{made} top-down tiles written")

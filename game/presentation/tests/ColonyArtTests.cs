@@ -227,9 +227,14 @@ public class ColonyArtTests
                     .OverrideFailureMessage($"{terrain} needs a SECOND top-down variant or the biome tiles visibly repeat").IsNotNull();
             }
 
-            // Ocean has no square tile on purpose — it must fall back to the de-skewed diamond, not vanish.
-            AssertThat(ColonyArt.LoadTexture("terrain/ocean/top0.png")).IsNull();
-            AssertThat(ColonyArt.LoadTexture("terrain/ocean/center0.png")).IsNotNull();
+            // Water gets square tiles too: the de-skewed FreeCol ocean showed diagonal wave artefacts across a big
+            // share of the screen, since the Australia map is mostly coastline.
+            AssertThat(ColonyArt.LoadTexture("terrain/ocean/top0.png")).IsNotNull();
+            AssertThat(ColonyArt.LoadTexture("terrain/highSeas/top0.png")).IsNotNull();
+
+            // Arctic has none on purpose — it must fall back to the de-skewed diamond, not vanish.
+            AssertThat(ColonyArt.LoadTexture("terrain/arctic/top0.png")).IsNull();
+            AssertThat(ColonyArt.LoadTexture("terrain/arctic/center0.png")).IsNotNull();
 
             // Classic ships no square tiles at all — its top-down keeps de-skewing, unchanged.
             ColonyArt.VariantArtRoot = null;

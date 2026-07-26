@@ -67,7 +67,14 @@ part of each source image was ever sampled.
 | grassland | `Grass004` | dry gold pasture |
 | marsh / swamp | `Ground048` | olive wetland |
 | hills / mountains | `Rock061` | red-brown rock |
-| ocean, high seas, arctic, tundra | *(none)* | fall back to the de-skewed FreeCol tile |
+| ocean, high seas | *(procedural — our own work, GPL v2)* | flat coastal / open sea |
+| arctic, tundra | *(none)* | fall back to the de-skewed FreeCol tile |
+
+**Water is procedurally generated, not sourced.** ambientCG is a PBR material library and has no usable sea texture
+(water is normally a shader, not an image), and the de-skewed FreeCol ocean showed obvious diagonal wave artefacts
+across a large share of the screen — the Australia map is mostly coastline. The water tiles are tileable sinusoidal
+noise from `build_topdown_terrain.py`, seamless by construction and **deliberately very low contrast**: a first attempt
+with a wide trough/crest range produced strong diagonal banding that read *worse* than the artefacts it replaced.
 
 Pipeline: [`tools/build_topdown_terrain.py`](../../../tools/build_topdown_terrain.py), with the CC0 inputs committed under
 `tools/cc0-ground/` so it runs offline and reproducibly.
