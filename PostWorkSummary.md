@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — Terrain: sourcing tried and rejected, then re-toned; before/after captured
+
+**Requested (Chris):** try sourcing individual pieces **first**, then re-tone; terrain → buildings → units; and provide a before/after screenshot from inside the game for visual inspection.
+**Did:**
+- **Genuinely tried sourcing first, and it failed on evidence — not on a hunch.** Best candidate: Screaming Brain Studios' CC0 isometric pack — correct 128×64 geometry, clean licence, downloaded and inspected. Built a side-by-side of their tiles against FreeCol's: **photographic high-contrast rock next to flat painterly tiles, and generic grey-brown rather than Australian ochre.** Terrain is the whole screen, so that clash is maximally visible. A second candidate (OpenGameArt seasonal tileset) was **CC BY-SA 4.0 — one-way compatible with GPL v3, not the v2 this project is under**, so unusable regardless of looks. Sent Chris the comparison image.
+- **Re-toned FreeCol's own tiles instead** (GPL→GPL, style-consistent by construction): 19 terrain + forest tiles. Red-ochre **desert** (the red centre), dry gold pasture, dusty grey-green **eucalypt** instead of pine. Ocean and polar tiles untouched. The transform script is **checked in as the provenance** — re-running it regenerates every tile byte-for-byte from the originals, which are never modified.
+- **Found and fixed a real gap while doing it.** `MapView` loaded terrain from a **hard-coded FreeCol path** in `_Ready()`, so the map — the largest art surface in the game — bypassed the variant art seam entirely. Australian terrain could have been supplied in full and the map would still have drawn FreeCol's. That's why the first "after" screenshot came back **identical to the before**. Now routed through the seam, with a reload once the variant is known.
+- **Two visible mistakes caught by looking at my own output** rather than assuming: the first pass left the desert **pink** (I'd multiplied saturation on an already-pale beige) and the forests **unchanged** (their hue was already 82°, and I'd targeted 80°). Measured the actual colour shift per tile, retuned, re-shot. A third pass fixed scrub that had gone bleached white.
+- **Built a reproducible capture** that centres on the **computed** most terrain-varied spot on the map, so before and after frame identical ground and the comparison is honest rather than flattering.
+**Status:** **3049 tests green**, **CI green both jobs including the visual-golden job** — which independently confirms the classic game's map is untouched. Pushed.
+**Changed:** 19 re-toned tiles + imports, `tools/retone_australian_terrain.py` (new), `MapView.cs` (seam + `ReloadTerrainArt`), `ColonyArt.cs` (public `LoadTexture`), `GameController.cs` (reload call), `DocsCaptureTests.cs` (the capture), `ColonyArtTests.cs` (+1 guarding the seam bug), `visual-identity.md`, `PROVENANCE.md`, the two screenshots.
+**Decisions:** derive from FreeCol rather than mix sources (style consistency beats individual tile quality on terrain); check in the transform script as provenance; leave ocean and polar tiles alone.
+**Scheduled next:** **buildings**, per the order Chris set (terrain → buildings → units).
+**Follow-ups:** units after buildings; Australian visual goldens so the new look is regression-guarded at image level; the honest ceiling stands — re-toning changes colour, not silhouette.
+**Needs you:** just a look at the two screenshots. If the desert is too red or the pasture too gold, say so — every value is one number in a checked-in table and a re-run.
+
+---
+
 ## 2026-07-26 — The game finally looks Australian (theme + colony colours)
 
 **Requested (Chris):** "Go with scheduled next now." — the Australian visual identity.
