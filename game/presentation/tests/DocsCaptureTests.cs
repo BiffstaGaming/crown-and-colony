@@ -480,6 +480,24 @@ public class DocsCaptureTests
         await runner.SimulateFrames(3);
 
         Game game = GameOf(controller);
+        // CAPTURE_WHOLEMAP=1 zooms right out and centres the continent instead of framing one region.
+        if (System.Environment.GetEnvironmentVariable("CAPTURE_WHOLEMAP") == "1")
+        {
+            var cam = controller.GetNode<CameraController>("Camera");
+            cam.ZoomOutStep();          // 1.0 -> 0.5
+            cam.ZoomOutStep();          // 0.5 -> 0.25: the 60x40 grid fits the window
+            cam.CenterOn(MapView.TileCentre(new GameLogic.World.Position(game.Map.Width / 2, game.Map.Height / 2)));
+            await runner.SimulateFrames(6);
+            foreach (string path in MapChrome)
+            {
+                if (controller.GetNodeOrNull<CanvasItem>(path) is { } n) n.Visible = false;
+            }
+            await runner.SimulateFrames(2);
+            Save(controller, System.Environment.GetEnvironmentVariable("CAPTURE_NAME") ?? "australia-wholemap");
+            MapView.TopDown = false;
+            return;
+        }
+
         GameLogic.World.Position focus = MostVariedTile(game);
         GD.Print($"[DOCS_CAPTURE] Australia terrain focus tile = {focus.X},{focus.Y}");
         controller.GetNode<CameraController>("Camera").CenterOn(MapView.TileCentre(focus));

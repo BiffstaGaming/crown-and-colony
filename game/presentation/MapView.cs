@@ -418,10 +418,20 @@ public partial class MapView : Node2D
             Color tint = _visible is not null && !_visible.Contains(p) ? DimTint : Colors.White;
             TerrainType terrain = _map.TerrainAt(p);
             string baseName = BaseFor.GetValueOrDefault(terrain.ShortName, terrain.ShortName);
-            // WS2.5b: a native square tile draws 1:1 (no warp, no seams); otherwise fall back to de-skewing the diamond.
-            if (_topDownBases.TryGetValue(baseName, out Texture2D[]? squareVariants))
+            // WS2.5b/c: a native square tile draws 1:1 (no warp, no seams). Look it up by the terrain's OWN short name
+            // first and only then by the BaseFor ground it borrows.
+            //
+            // That order matters and getting it wrong was a real bug: BaseFor maps `mountains` -> `tundra` and each
+            // forest -> its underlying ground, because the isometric art draws those as an OVERLAY on borrowed ground.
+            // Looking up by the mapped name alone meant mountains drew FreeCol's white SNOW tile in the middle of
+            // central Australia, and the forest canopy tiles were never drawn at all — while the tree overlay had
+            // already been suppressed, so forests rendered as bare ground.
+            bool drewSquare = false;
+            if (_topDownBases.TryGetValue(terrain.ShortName, out Texture2D[]? ownSquare)
+                || _topDownBases.TryGetValue(baseName, out ownSquare))
             {
-                DrawSquare(squareVariants, variantSeed, square, tint);
+                DrawSquare(ownSquare, variantSeed, square, tint);
+                drewSquare = true;
             }
             else if (_bases.TryGetValue(baseName, out Texture2D[]? baseVariants))
             {
@@ -436,7 +446,9 @@ public partial class MapView : Node2D
             // reads. WS2.5c: SKIPPED where a native square tile already covers the cell — a forest with a real canopy
             // tile must not also get a little side-view tree standing on top of it, which was the last obviously
             // isometric thing on the top-down map.
-            bool coveredBySquareTile = _topDownBases.ContainsKey(terrain.ShortName);
+            // Suppress the iso symbol only when this terrain drew its OWN square tile (a canopy/rock tile already
+            // shows the feature). A terrain that merely borrowed another's ground still needs its overlay.
+            bool coveredBySquareTile = drewSquare && _topDownBases.ContainsKey(terrain.ShortName);
             if (!coveredBySquareTile
                 && _overlays.TryGetValue(terrain.ShortName, out Texture2D[]? overlay) && overlay.Length > 0)
             {
