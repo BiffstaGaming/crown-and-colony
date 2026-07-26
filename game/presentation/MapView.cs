@@ -137,7 +137,12 @@ public partial class MapView : Node2D
             }
         }
         // The overlay terrains (forest/hills/mountains) carry their ground under these names too.
-        foreach (string name in new[] { "hills", "mountains" })
+        foreach (string name in new[]
+        {
+            "hills", "mountains",
+            "broadleafForest", "mixedForest", "coniferForest", "borealForest",
+            "scrubForest", "tropicalForest", "rainForest", "wetlandForest",
+        })
         {
             Texture2D[] square = LoadVariants($"terrain/{name}/top");
             if (square.Length > 0)
@@ -427,8 +432,13 @@ public partial class MapView : Node2D
                 DrawColoredPolygon(square, new Color(1f, 0f, 1f)); // unmapped terrain → magenta square
             }
 
-            // Forest / hills / mountains: a shrunk centred symbol (the tall iso art can't be de-skewed) so the type reads.
-            if (_overlays.TryGetValue(terrain.ShortName, out Texture2D[]? overlay) && overlay.Length > 0)
+            // Forest / hills / mountains: a shrunk centred symbol (the tall iso art can't be de-skewed) so the type
+            // reads. WS2.5c: SKIPPED where a native square tile already covers the cell — a forest with a real canopy
+            // tile must not also get a little side-view tree standing on top of it, which was the last obviously
+            // isometric thing on the top-down map.
+            bool coveredBySquareTile = _topDownBases.ContainsKey(terrain.ShortName);
+            if (!coveredBySquareTile
+                && _overlays.TryGetValue(terrain.ShortName, out Texture2D[]? overlay) && overlay.Length > 0)
             {
                 DrawCentredSymbol(overlay[(variantSeed & int.MaxValue) % overlay.Length], c, tint, 0.85f);
             }

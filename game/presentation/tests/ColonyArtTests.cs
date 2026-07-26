@@ -232,6 +232,10 @@ public class ColonyArtTests
             AssertThat(ColonyArt.LoadTexture("terrain/ocean/top0.png")).IsNotNull();
             AssertThat(ColonyArt.LoadTexture("terrain/highSeas/top0.png")).IsNotNull();
 
+            // WS2.5c: forests get a full canopy tile, so the iso side-view tree overlay is suppressed for them.
+            AssertThat(ColonyArt.LoadTexture("terrain/broadleafForest/top0.png")).IsNotNull();
+            AssertThat(ColonyArt.LoadTexture("terrain/scrubForest/top0.png")).IsNotNull();
+
             // Arctic has none on purpose — it must fall back to the de-skewed diamond, not vanish.
             AssertThat(ColonyArt.LoadTexture("terrain/arctic/top0.png")).IsNull();
             AssertThat(ColonyArt.LoadTexture("terrain/arctic/center0.png")).IsNotNull();

@@ -117,6 +117,65 @@ for terrain, (source, hue, sat, val) in PLAN.items():
         made += 1
     print(f"  {terrain:10} <- {source} (2 variants)")
 
+# ── Forest canopy (WS2.5c) ───────────────────────────────────────────────────────────────────────
+# Forests were the last obviously-isometric thing on the top-down map: MapView drew the tall iso
+# side-view tree sprite SHRUNK and centred on the cell, so a forest read as a little bush standing on
+# open ground rather than as tree cover seen from above. Forest terrains now get a full square canopy
+# tile like any other ground, and MapView suppresses the iso overlay symbol wherever one exists.
+#
+# Generated rather than sourced: CC0 libraries have plenty of side-on trees and almost no seamless
+# canopy-from-above, and a canopy has to tile seamlessly against itself across a whole forest region.
+# Our own work (GPL v2). Blob centres wrap in both axes, so the tile is seamless by construction.
+CANOPY = {
+    #                 ground        canopy dark     canopy light   blobs
+    "broadleafForest": ((104, 96, 58), (58, 74, 44), (92, 108, 62), 26),
+    "mixedForest":     ((104, 96, 58), (56, 72, 44), (88, 104, 60), 26),
+    "coniferForest":   ((100, 92, 56), (50, 66, 42), (80, 96, 56), 28),
+    "borealForest":    ((100, 92, 56), (48, 64, 40), (78, 92, 54), 28),
+    "scrubForest":     ((132, 118, 70), (86, 92, 54), (120, 124, 74), 18),  # mallee: sparser, drier
+    "tropicalForest":  ((92, 92, 52), (40, 74, 40), (70, 112, 56), 32),     # the far north: denser, greener
+    "rainForest":      ((88, 90, 50), (36, 70, 38), (64, 106, 52), 34),
+    "wetlandForest":   ((98, 98, 58), (52, 74, 48), (84, 104, 62), 24),
+}
+
+def canopy_tile(ground, dark, light, blobs, side=64, seed=1):
+    """A seamless canopy seen from above: overlapping soft blobs on the ground tone. Centres wrap in
+    both axes (modulo the tile), so a blob crossing an edge reappears on the opposite side and the
+    tile abuts itself with no seam."""
+    import math, random
+    rng = random.Random(seed)
+    im = Image.new("RGBA", (side, side), (*ground, 255))
+    px = im.load()
+    centres = [(rng.uniform(0, side), rng.uniform(0, side), rng.uniform(4.0, 8.0), rng.random())
+               for _ in range(blobs)]
+    for y in range(side):
+        for x in range(side):
+            best = 0.0; tone = 0.0
+            for cx, cy, r, shade in centres:
+                dx = min(abs(x - cx), side - abs(x - cx))   # wrapped distance
+                dy = min(abs(y - cy), side - abs(y - cy))
+                d = math.hypot(dx, dy)
+                if d < r:
+                    w = (1.0 - d / r) ** 0.7
+                    if w > best:
+                        best = w; tone = shade
+            if best > 0.02:
+                cr = int(dark[0] + (light[0] - dark[0]) * tone)
+                cg = int(dark[1] + (light[1] - dark[1]) * tone)
+                cb = int(dark[2] + (light[2] - dark[2]) * tone)
+                a = min(1.0, best * 1.25)
+                r0, g0, b0, _ = px[x, y]
+                px[x, y] = (int(r0 + (cr - r0) * a), int(g0 + (cg - g0) * a), int(b0 + (cb - b0) * a), 255)
+    return im
+
+for terrain, (ground, dark, light, blobs) in CANOPY.items():
+    d = os.path.join(DST, terrain)
+    os.makedirs(d, exist_ok=True)
+    for idx3 in (0, 1):
+        canopy_tile(ground, dark, light, blobs, seed=1 + idx3 * 977).save(os.path.join(d, f"top{idx3}.png"))
+        made += 1
+    print(f"  {terrain:16} <- procedural seamless canopy (2 variants)")
+
 for terrain, (dark, light) in WATER.items():
     d = os.path.join(DST, terrain)
     os.makedirs(d, exist_ok=True)
