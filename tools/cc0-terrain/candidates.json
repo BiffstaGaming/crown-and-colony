@@ -1,0 +1,110 @@
+{
+ "desert": [
+  "terrain_red_01",
+  "red_dirt_mud_01",
+  "red_laterite_soil_stones",
+  "aerial_sand"
+ ],
+ "plains": [
+  "dry_ground_01",
+  "dry_mud_field_001",
+  "brown_mud_dry",
+  "sandy_gravel_02"
+ ],
+ "prairie": [
+  "grass_path_2",
+  "dry_ground_rocks",
+  "gravelly_sand",
+  "dirt_aerial_02"
+ ],
+ "savannah": [
+  "dry_ground_rocks",
+  "brown_mud_dry",
+  "dirt_aerial_03",
+  "grass_path_3"
+ ],
+ "grassland": [
+  "aerial_grass_rock",
+  "grass_path_2",
+  "grass_path_3",
+  "forrest_ground_03"
+ ],
+ "marsh": [
+  "aerial_mud_1",
+  "brown_mud_02",
+  "coral_mud_01",
+  "brown_mud_03"
+ ],
+ "swamp": [
+  "brown_mud",
+  "brown_mud_leaves_01",
+  "mud_cracked_dry_riverbed_002",
+  "forest_floor"
+ ],
+ "hills": [
+  "rocks_ground_01",
+  "rocky_terrain",
+  "red_mud_stones",
+  "rocks_ground_04"
+ ],
+ "mountains": [
+  "rocks_ground_05",
+  "rocky_terrain_02",
+  "gray_rocks",
+  "rock_ground_02"
+ ],
+ "broadleafForest": [
+  "forest_ground_04",
+  "forest_floor",
+  "leaves_forest_ground",
+  "forrest_ground_01"
+ ],
+ "mixedForest": [
+  "forest_ground_05",
+  "forest_leaves_02",
+  "forrest_ground_03",
+  "forest_ground_06"
+ ],
+ "coniferForest": [
+  "forest_ground_06",
+  "forest_leaves_03",
+  "forrest_ground_01",
+  "forest_floor"
+ ],
+ "tropicalForest": [
+  "forest_leaves_04",
+  "forest_ground_04",
+  "leaves_forest_ground",
+  "forest_ground_05"
+ ],
+ "scrubForest": [
+  "dry_decay_leaves",
+  "forrest_sand_01",
+  "dry_ground_rocks",
+  "gravelly_sand"
+ ],
+ "borealForest": [
+  "forest_ground_06",
+  "forest_leaves_03",
+  "forrest_ground_01",
+  "forest_floor"
+ ],
+ "rainForest": [
+  "forest_leaves_04",
+  "forest_ground_04",
+  "leaves_forest_ground",
+  "forest_ground_05"
+ ],
+ "wetlandForest": [
+  "brown_mud_leaves_01",
+  "forest_floor",
+  "aerial_mud_1",
+  "forest_ground_05"
+ ],
+ "tundra": [
+  "dry_ground_01",
+  "brown_mud_dry",
+  "sandy_gravel_02",
+  "gravelly_sand"
+ ]
+}

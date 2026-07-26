@@ -47,6 +47,47 @@ Bespoke Australian goods art is a WS2 art-pass follow-up.
 
 
 
+
+## Top-down terrain — SOURCED art (Poly Haven, CC0)
+
+**This is sourced photographic terrain art, not recoloured FreeCol art and not procedural.** All of it is from
+[Poly Haven](https://polyhaven.com), released **CC0 / public domain** — unambiguously GPL-v2-compatible, no attribution
+obligation (recorded here regardless). Nothing is re-tinted: the tiles are the source textures cut to the 64px game
+tile, so what is on screen is the art itself.
+
+**Four candidates were sourced for every terrain type** on the Australia map, so the choice can be made per terrain
+rather than accepted wholesale. The full matrix is in `tools/cc0-terrain/candidates.json`, and the visual comparison is
+`docs/guide/img/sourced-terrain-options.png` (four options per terrain) plus `docs/guide/img/sourced-set-{1..4}.png`
+(each complete set rendered on the whole continent).
+
+| Terrain | Option 1 | Option 2 | Option 3 | Option 4 |
+|---|---|---|---|---|
+| desert | terrain_red_01 | red_dirt_mud_01 | red_laterite_soil_stones | aerial_sand |
+| plains | dry_ground_01 | dry_mud_field_001 | brown_mud_dry | sandy_gravel_02 |
+| prairie | grass_path_2 | dry_ground_rocks | gravelly_sand | dirt_aerial_02 |
+| savannah | dry_ground_rocks | brown_mud_dry | dirt_aerial_03 | grass_path_3 |
+| grassland | aerial_grass_rock | grass_path_2 | grass_path_3 | forrest_ground_03 |
+| scrubForest | dry_decay_leaves | forrest_sand_01 | dry_ground_rocks | gravelly_sand |
+| broadleafForest | forest_ground_04 | forest_floor | leaves_forest_ground | forrest_ground_01 |
+| mixedForest | forest_ground_05 | forest_leaves_02 | forrest_ground_03 | forest_ground_06 |
+| coniferForest | forest_ground_06 | forest_leaves_03 | forrest_ground_01 | forest_floor |
+| tropicalForest | forest_leaves_04 | forest_ground_04 | leaves_forest_ground | forest_ground_05 |
+| marsh | aerial_mud_1 | brown_mud_02 | coral_mud_01 | brown_mud_03 |
+| swamp | brown_mud | brown_mud_leaves_01 | mud_cracked_dry_riverbed_002 | forest_floor |
+| hills | rocks_ground_01 | rocky_terrain | red_mud_stones | rocks_ground_04 |
+| mountains | rocks_ground_05 | rocky_terrain_02 | gray_rocks | rock_ground_02 |
+
+**Installed: option set 3.** Switch with `python tools/install_sourced_terrain.py <1-4>`.
+
+**Pipeline.** `tools/cc0-terrain/` holds the sources already cut to 64px (two crops each, so a biome does not show a
+grid of identical tiles) — vendored at ~900 KB so the installer runs offline and reproducibly; the full 1K originals
+(31 MB) are deliberately not committed. Tiles are a **512px crop scaled 8:1**, not a whole-image downscale: averaging a
+1K photo down to 64px destroys the grain and reads as mud.
+
+**Water is the one exception** — no CC0 library covers sea (Poly Haven's terrain set has none; ambientCG is a PBR
+library where water is a shader). `tools/build_water_tiles.py` generates it: tileable sinusoidal noise, seamless by
+construction, our own work (GPL v2).
+
 ## Top-down square terrain tiles (`terrain/<name>/top{0,1}.png`) — CC0 base + Australian re-tone
 
 **Two-stage, and the first stage is genuinely sourced art.** Top-down is expected to become the game's main view, and it
