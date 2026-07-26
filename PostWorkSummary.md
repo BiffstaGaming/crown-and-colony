@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — Correction: the "before" image was isometric; ocean was still iso art
+
+**Requested (Chris):** "Those textures do not look correct in the new version, they are isometric still in the images you gave me."
+**He was right on both counts, and one of them was my error in what I presented.**
+- **The before image I sent was rendered in ISOMETRIC, not top-down.** Measured against the isometric capture it differs by **0.27 mean** — effectively the same image. So the pair was not like-for-like, and my claim about "visible de-skew seams in the before" was not evidenced by the picture I used to support it. **Re-captured properly**: the before is now taken with the square tiles *temporarily removed*, so it genuinely exercises the de-skew path.
+- **For the record the top-down path itself is fine** — I verified it objectively rather than by eye: a lattice autocorrelation of the two renders peaks at **(64,32)/(128,0)** for isometric (diamond lattice) and **(64,64)** for top-down (square lattice).
+- **A large share of what he was looking at was still isometric art — above all the OCEAN.** The Australia map is mostly coastline, so the sea covers much of the screen, and it was a de-skewed diamond showing diagonal wave artefacts. Water now has native square tiles.
+**Did:** square water tiles for ocean and high seas — **procedural, not sourced**: ambientCG is a PBR material library with no usable sea texture (water is a shader, not an image), so these are our own original work (GPL v2, no third-party licence), tileable sinusoidal noise, seamless by construction. **Deliberately very low contrast** — a first attempt with a wide trough/crest range produced strong diagonal banding that read *worse* than the artefacts it was replacing, which is precisely the failure being fixed.
+**Status:** **3049 tests green**, **CI green both jobs**. Pushed.
+**Changed:** ocean/highSeas square tiles, `tools/build_topdown_terrain.py` (water generator), `ColonyArtTests.cs` (guard now covers water + checks arctic still falls back), `PROVENANCE.md`, corrected before/after screenshots.
+**Decisions:** verify the projection by measurement rather than by eye in future — the whole error came from trusting a screenshot that looked plausible.
+**Scheduled next:** **the remaining isometric art in the top-down view** — forest and hills draw as shrunk side-view sprites floating on the tile; settlements, units and resource icons are iso sprites. From above, forest should be canopy. That is now the most visibly wrong thing left in the view Chris expects to be the main one.
+**Follow-ups:** buildings, then units; Australian visual goldens.
+**Needs you:** a look at the corrected pair. The remaining "isometric-looking" things are the sprites listed above, not the ground.
+
+---
+
 ## 2026-07-26 — Redone for top-down: native square tiles, and this time the sourcing worked
 
 **Requested (Chris):** "You should be looking for terrain that fits the top/down view also. I believe Top/Down WILL end up being the main view. Can you re-do the last task, but base it off that."
