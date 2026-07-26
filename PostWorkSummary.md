@@ -19,6 +19,23 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — The game finally looks Australian (theme + colony colours)
+
+**Requested (Chris):** "Go with scheduled next now." — the Australian visual identity.
+**Did:**
+- **Re-toned the whole interface for the Australian campaign.** The game had been wearing FreeCol's look — cream parchment over dark European oak with gold trim — with Australian words pasted on top. Nothing on screen said "Australia" except the captions. Rather than throw that design away, I re-toned it: **sun-bleached paper** instead of European cream, **jarrah and red-gum timbers** instead of dark oak (the timbers the colonies actually built with), and the trim moved from **gold to Federation blue** — the field of the Southern Cross. That last one is the big tell: focus rings, headings and pressed buttons all shift, so a screen reads as Australian before you read a word.
+- **Gave the six colonies their own colours.** The Federation panel showed six identical rows differing only by their label. Each now has a colour swatch — Federation blue NSW, bush green Victoria, maroon Queensland, ochre-red SA, cool slate Tasmania, goldfields yellow WA. Deliberately muted and period-looking, not bright modern UI colours, and no two sit next to each other on the colour wheel.
+- **Did it without touching ~40 call sites.** The palette became a switch *inside* the existing theme builder, so every screen that asks for "the theme" simply gets the right one. The switch resets to classic at startup and is only set to Australia when an Australia game starts.
+- **Proved the classic game is untouched** — the palette values are bit-for-bit identical and the test asserts that switching to Australia and back restores the classic accent exactly. **The visual-comparison tests passed on CI**, which independently confirms no existing screen changed.
+**Status:** **3049 tests green**, **CI green both jobs including the visual-comparison job**. Pushed.
+**Changed:** `ColonyTheme.cs` (the skin, palette and colony colours), `GameController.cs` (skin selection), `FederationPanel.cs` (swatches), `ColonyArtTests.cs` (+2), new `docs/systems/visual-identity.md` with the full palette table. Kanban: art direction → In Review, expert workers → Shipped.
+**Decisions:** re-tone rather than redesign (keeps every layout and golden intact, and the parchment base is period-correct either way); muted colony colours over bright ones; Federation blue as the accent because it's the campaign's own motif.
+**Scheduled next:** **unit, building and terrain art** — now the single largest remaining visual gap. The map still draws American-colonial sprites. Unlike the theme, this needs actual images, so expect it to go slower and land piece by piece.
+**Follow-ups:** game title/logo and menu splash; flags and colony emblems (the swatches are the placeholder for those); Australian visual-comparison tests so this skin is regression-guarded at the image level too.
+**Needs you:** nothing. Worth knowing: I can't show you the new look in this session — start an Australia game and open the Federation panel to see it.
+
+---
+
 ## 2026-07-26 — Two more items, no review needed: Australian expert workers + the Treaty grade fixed
 
 **Requested (Chris):** "Keep working through the items without my review/assistance."
