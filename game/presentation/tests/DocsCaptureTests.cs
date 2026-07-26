@@ -464,6 +464,10 @@ public class DocsCaptureTests
         var controller = (GameController)runner.Scene();
         controller.GetWindow().Size = Big; // more ground on screen = a more useful comparison
 
+        // CAPTURE_TOPDOWN=1 shoots the top-down projection instead of the isometric one. Set BEFORE StartNewGame so the
+        // map builds in the right projection from the outset.
+        MapView.TopDown = System.Environment.GetEnvironmentVariable("CAPTURE_TOPDOWN") == "1";
+
         SetVariant(controller, GameLogic.Specification.GameVariants.Australia);
         controller.StartNewGame(Seed, GameLogic.World.WorldSizeOptions.DefaultSize, GameLogic.World.WorldSizeOptions.DefaultLandMass,
             GameLogic.Specification.DifficultyLevels.Default, GameLogic.World.MapSource.Australia);
@@ -497,6 +501,7 @@ public class DocsCaptureTests
         await runner.SimulateFrames(2);
 
         Save(controller, System.Environment.GetEnvironmentVariable("CAPTURE_NAME") ?? "australia-terrain");
+        MapView.TopDown = false; // static — never leave it set for the other capture cases
     }
 
     /// <summary>

@@ -205,4 +205,40 @@ public class ColonyArtTests
             ColonyArt.VariantArtRoot = prev;
         }
     }
+
+    /// <summary>
+    /// WS2.5b: top-down gets <b>native square</b> tiles rather than a de-skewed diamond. Art drawn as diamonds cannot
+    /// tile as squares, so the warp shows seams and repeating diagonal artefacts — a real defect in what is expected to
+    /// become the game's main view. Guards that the square tiles exist for Australia, that two variants are supplied
+    /// (one tile repeated across a biome shows an obvious grid), and that classic ships none so it still de-skews.
+    /// </summary>
+    [TestCase]
+    public void TopDownSquareTiles_ExistForAustralia_AndClassicFallsBackToTheDeskew()
+    {
+        string? prev = ColonyArt.VariantArtRoot;
+        try
+        {
+            ColonyArt.VariantArtRoot = "australia";
+            foreach (string terrain in new[] { "desert", "grassland", "plains", "savannah", "hills" })
+            {
+                AssertThat(ColonyArt.LoadTexture($"terrain/{terrain}/top0.png"))
+                    .OverrideFailureMessage($"the top-down square tile for {terrain} is missing").IsNotNull();
+                AssertThat(ColonyArt.LoadTexture($"terrain/{terrain}/top1.png"))
+                    .OverrideFailureMessage($"{terrain} needs a SECOND top-down variant or the biome tiles visibly repeat").IsNotNull();
+            }
+
+            // Ocean has no square tile on purpose — it must fall back to the de-skewed diamond, not vanish.
+            AssertThat(ColonyArt.LoadTexture("terrain/ocean/top0.png")).IsNull();
+            AssertThat(ColonyArt.LoadTexture("terrain/ocean/center0.png")).IsNotNull();
+
+            // Classic ships no square tiles at all — its top-down keeps de-skewing, unchanged.
+            ColonyArt.VariantArtRoot = null;
+            AssertThat(ColonyArt.LoadTexture("terrain/desert/top0.png")).IsNull();
+            AssertThat(ColonyArt.LoadTexture("terrain/desert/center0.png")).IsNotNull();
+        }
+        finally
+        {
+            ColonyArt.VariantArtRoot = prev;
+        }
+    }
 }

@@ -40,7 +40,21 @@ It now reads Australian — **burnt red-ochre desert** (the red centre, the sing
 landscape), dry gold grassland and pasture, and **dusty grey-green eucalypt** instead of pine green. The ocean is
 untouched, because the sea is the sea.
 
-**Sourced art was tried first and rejected on the evidence.** The best licence-clean candidate found was Screaming Brain
+#### Top-down gets its own tiles (WS2.5b)
+
+Top-down is expected to become the game's **main view**, and it had no art of its own — it warped each isometric diamond
+into a square. Art drawn as diamonds cannot tile as squares, so that showed **visible seams and repeating diagonal
+artefacts**, and only part of each tile was ever sampled. Top-down now has **native 64×64 square tiles**, and here
+**sourcing did work**: a CC0 seamless ground scan (ambientCG, public domain) as the base — which is what actually fixes
+the seams — with the same Australian re-tone on top so both projections read as one country. Two variants per terrain,
+because one tile repeated across a biome shows an obvious grid. Terrains without a square tile (ocean, the polar types)
+fall back to the de-skew, and classic ships none at all, so its top-down is unchanged.
+
+Why sourcing succeeded here and failed for isometric: in top-down the **entire ground plane** is replaced by one coherent
+set, so internal consistency is what matters. In isometric a sourced tile would have sat as a lone photographic square
+among FreeCol's painterly diamonds.
+
+**For the isometric view, sourced art was tried first and rejected on the evidence.** The best licence-clean candidate found was Screaming Brain
 Studios' CC0 isometric pack — correct 128×64 geometry, genuinely usable licence. It was still wrong: photographic,
 high-contrast rock textures beside FreeCol's flat painterly tiles, in generic grey-brown rather than Australian ochre.
 Terrain is the whole screen, so a style clash there is maximally visible. (A second candidate, an OpenGameArt seasonal
@@ -126,5 +140,6 @@ title/logo and menu splash (WS2.2); flags and colony emblems (WS2.3). This is th
 
 | Date | Change | Commit |
 |---|---|---|
+| 2026-07-26 | **WS2.5b — native square terrain tiles for the top-down view, and sourced art finally used.** Top-down (expected to become the main view) had no art of its own: it warped 128×64 isometric diamonds onto 64px squares, which cannot tile — showing seams and repeating diagonal artefacts. `MapView` now prefers `terrain/<name>/top{0,1}.png` and draws it 1:1, falling back to the de-skew when absent (ocean, polar types, and the whole classic ruleset). The tiles are **CC0 ambientCG ground scans** (the base that actually fixes the seams) re-toned to the Australian palette, two variants per terrain to break up visible repetition, built by `tools/build_topdown_terrain.py` from inputs committed under `tools/cc0-ground/`. Also recorded the licences ruled out (CC BY-SA 3.0/4.0 and GPL 3.0 are GPL-v3-only; this project is v2). | (this commit) |
 | 2026-07-26 | **WS2.5 — Australian terrain and forest art, and the map wired to the art seam.** 19 tiles re-toned from FreeCol's own art (GPL→GPL) by a checked-in, reproducible HSV transform (`tools/retone_australian_terrain.py`): red-ochre desert, dry gold pasture, dusty grey-green eucalypt; ocean and polar tiles untouched. **Also fixed a real gap:** `MapView` loaded terrain from a hard-coded `res://assets/freecol/` path in `_Ready()`, so the map bypassed the WS1.3 variant seam entirely and could never show variant terrain however much art existed — it now loads through `ColonyArt.LoadTexture`, with `ReloadTerrainArt()` called once the variant is known (`_Ready` runs before that). Sourced art was attempted first and rejected on style and licence grounds (see §1). | (this commit) |
 | 2026-07-26 | **Initial implementation — WS2.1 art direction + the Australian theme skin.** `ColonyTheme` gained a `Skin` switch (Classic / Australia) with the palette re-toned per the table above — sun-bleached paper, jarrah/red-gum timbers, and the accent moved from gold to Federation blue. Implemented as a palette switch inside the existing builder, so all ~40 `ColonyTheme.Get()` call sites were untouched. Added `ColonyRegionColor` and a per-colony swatch on each Federation-panel region row, replacing six rows distinguishable only by their label. Classic values are bit-for-bit unchanged and the skin resets to `Classic` at scene setup, so every existing visual golden holds. | (this commit) |

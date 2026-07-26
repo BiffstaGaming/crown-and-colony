@@ -46,6 +46,36 @@ Bespoke Australian goods art is a WS2 art-pass follow-up.
 
 
 
+
+## Top-down square terrain tiles (`terrain/<name>/top{0,1}.png`) — CC0 base + Australian re-tone
+
+**Two-stage, and the first stage is genuinely sourced art.** Top-down is expected to become the game's main view, and it
+had no art of its own: `MapView` warped the inscribed diamond of each 128×64 isometric tile onto a 64px square. Art drawn
+as diamonds *cannot* tile as squares, so that de-skew showed **visible seams and repeating diagonal artefacts**, and only
+part of each source image was ever sampled.
+
+1. **Base — [ambientCG](https://ambientcg.com), CC0 (public domain).** Seamless 1K ground scans; no attribution required,
+   and CC0 is unambiguously GPL-v2-compatible. Each game tile is a **256px crop scaled 4:1 to 64px** — a straight
+   1024→64 downscale averages away all grain and the tile reads as a flat colour block on screen. **Two variants per
+   terrain** from different crops, because a single tile repeated across a biome shows an obvious grid of identical clumps.
+2. **Australian re-tone** — the same hue/saturation transform as the isometric art, so both projections read as one country.
+
+| Terrain | ambientCG source | Reads as |
+|---|---|---|
+| desert | `Ground054` | red centre |
+| plains / prairie / savannah | `Ground078` | straw / bleached / ochre dry grass |
+| grassland | `Grass004` | dry gold pasture |
+| marsh / swamp | `Ground048` | olive wetland |
+| hills / mountains | `Rock061` | red-brown rock |
+| ocean, high seas, arctic, tundra | *(none)* | fall back to the de-skewed FreeCol tile |
+
+Pipeline: [`tools/build_topdown_terrain.py`](../../../tools/build_topdown_terrain.py), with the CC0 inputs committed under
+`tools/cc0-ground/` so it runs offline and reproducibly.
+
+**Licences rejected along the way, recorded so the search is not repeated:** an OpenGameArt seasonal isometric tileset
+was **CC BY-SA 4.0** and an LPC terrain set is **CC BY-SA 3.0 / GPL 3.0** — both are one-way compatible with GPL **v3**
+only, and this project is **GPL v2** (see `LICENSE`). Neither is usable however good it looks.
+
 ## Australian terrain + forest art (`terrain/`, `forest/`)
 
 **Derivative of our own FreeCol art — GPL v2 → GPL v2.** Every file here is `game/assets/freecol/<same path>` put through a

@@ -35,6 +35,7 @@ FreeCol-sourced, OFL-font, and project-original files catalogued here are presen
 | **GPL v2 or later** | FreeCol art (sprites, terrain, UI, settlements, bonus/goods/building icons), sound effects, national anthems, ruleset XML + string data, America + Australia map terrain | Yes — same license as the game |
 | **CC BY 4.0** | FreeCol background-music tracks | Yes — one-way compatible into GPL v2; attribution required (below) |
 | **Public domain** | 22 of the 24 Australian Pioneer portraits (pre-1955 photographs / pre-1931 works, via Wikimedia Commons) | Yes — no restrictions; provenance recorded in the Asset Register |
+| **CC0** | Ground textures underlying the Australian top-down terrain tiles (ambientCG) | Yes — public domain, no attribution required; sources recorded in the Asset Register anyway |
 | **CC BY 2.0** | One Australian Pioneer portrait (Mary Lee) | Yes — one-way compatible into GPL v2; attribution required (below) |
 | **SIL Open Font License 1.1 (OFL)** | The Cardo UI font | Yes — font is a data asset under OFL; game code stays GPL v2 |
 

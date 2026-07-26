@@ -86,6 +86,15 @@ public partial class MapView : Node2D
     };
 
     private readonly Dictionary<string, Texture2D[]> _bases = [];
+
+    /// <summary>
+    /// <b>Native square</b> top-down tiles, by terrain short name (WS2.5b). Top-down otherwise warps the inscribed
+    /// diamond of a 128×64 isometric tile onto a square — but art drawn as diamonds cannot tile as squares, so that
+    /// de-skew shows seams and repeating diagonal artefacts, and only part of each source image is ever sampled. A
+    /// variant that ships <c>terrain/&lt;name&gt;/top0.png</c> gets a real seamless square instead. Terrains without one
+    /// (and the whole classic ruleset, which ships none) fall back to the de-skew exactly as before.
+    /// </summary>
+    private readonly Dictionary<string, Texture2D[]> _topDownBases = [];
     private readonly Dictionary<string, Texture2D[]> _overlays = [];
     private readonly Dictionary<string, Texture2D> _bonusIcons = [];
     private Texture2D[] _unexplored = [];
@@ -105,6 +114,7 @@ public partial class MapView : Node2D
     public void ReloadTerrainArt()
     {
         _bases.Clear();
+        _topDownBases.Clear();
         _overlays.Clear();
         LoadTerrainArt();
         QueueRedraw();
@@ -120,6 +130,20 @@ public partial class MapView : Node2D
         })
         {
             _bases[name] = LoadVariants($"terrain/{name}/center");
+            Texture2D[] square = LoadVariants($"terrain/{name}/top");
+            if (square.Length > 0)
+            {
+                _topDownBases[name] = square; // WS2.5b: a native square tile for this terrain
+            }
+        }
+        // The overlay terrains (forest/hills/mountains) carry their ground under these names too.
+        foreach (string name in new[] { "hills", "mountains" })
+        {
+            Texture2D[] square = LoadVariants($"terrain/{name}/top");
+            if (square.Length > 0)
+            {
+                _topDownBases[name] = square;
+            }
         }
         _unexplored = LoadVariants("terrain/unexplored/center");
 
@@ -389,7 +413,12 @@ public partial class MapView : Node2D
             Color tint = _visible is not null && !_visible.Contains(p) ? DimTint : Colors.White;
             TerrainType terrain = _map.TerrainAt(p);
             string baseName = BaseFor.GetValueOrDefault(terrain.ShortName, terrain.ShortName);
-            if (_bases.TryGetValue(baseName, out Texture2D[]? baseVariants))
+            // WS2.5b: a native square tile draws 1:1 (no warp, no seams); otherwise fall back to de-skewing the diamond.
+            if (_topDownBases.TryGetValue(baseName, out Texture2D[]? squareVariants))
+            {
+                DrawSquare(squareVariants, variantSeed, square, tint);
+            }
+            else if (_bases.TryGetValue(baseName, out Texture2D[]? baseVariants))
             {
                 DrawDeskewed(baseVariants, variantSeed, square, tint);
             }
@@ -416,6 +445,19 @@ public partial class MapView : Node2D
     }
 
     /// <summary>De-skews a diamond ground texture onto the given square (4-corner texture warp), tinted by <paramref name="modulate"/>.</summary>
+    /// <summary>Draws a <b>native square</b> tile onto the cell 1:1 — full-texture UVs, no warp, so a seamless source stays seamless (WS2.5b).</summary>
+    private void DrawSquare(Texture2D[] variants, int variantSeed, Vector2[] square, Color modulate)
+    {
+        if (variants.Length == 0)
+        {
+            return;
+        }
+        Texture2D texture = variants[(variantSeed & int.MaxValue) % variants.Length];
+        Color[] colors = [modulate, modulate, modulate, modulate];
+        Vector2[] uvs = [new(0f, 0f), new(1f, 0f), new(1f, 1f), new(0f, 1f)]; // matches the square's corner order
+        DrawPolygon(square, colors, uvs, texture);
+    }
+
     private void DrawDeskewed(Texture2D[] variants, int variantSeed, Vector2[] square, Color modulate)
     {
         if (variants.Length == 0)
