@@ -19,6 +19,26 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — Redone for top-down: native square tiles, and this time the sourcing worked
+
+**Requested (Chris):** "You should be looking for terrain that fits the top/down view also. I believe Top/Down WILL end up being the main view. Can you re-do the last task, but base it off that."
+**Chris was right, and it changed the answer.** Two things I'd missed:
+- **Top-down had no art of its own.** It takes each isometric *diamond* and warps it into a square. Art drawn as diamonds **cannot tile as squares**, so the result showed **visible seams and repeating diagonal artefacts**, and only ever sampled part of each image. That's a real defect in the view the game is heading toward — see the "before" shot.
+- **Sourcing works for top-down when it didn't for isometric.** Because top-down replaces the *entire ground plane* with one coherent set, internal consistency is what matters. In isometric, a sourced tile sat as a lone photographic square among FreeCol's painterly diamonds — which is exactly why I rejected it last time. The rejection was right *for iso*; it was the wrong conclusion to carry into top-down.
+**Did:**
+- **Native 64×64 square tiles for top-down**, built in two stages: a **CC0 seamless ground scan** (ambientCG, public domain) as the base — which is what actually fixes the seams, FreeCol's art fundamentally cannot — then the **same Australian re-tone** as the isometric art, so both projections read as one country.
+- **Two fixes found by looking at my own output, not by assuming:** a straight 1024→64 downscale **averaged all the grain away** and the desert rendered as a flat colour block (now a 256px crop scaled 4:1); and a single tile per terrain showed an **obvious grid of identical clumps** across a biome (now two variants per terrain from different crops, picked per tile).
+- **Fell back cleanly rather than forcing it:** ocean, the polar terrains, and the **whole classic ruleset** ship no square tiles and keep the old behaviour untouched.
+- **Recorded the licences ruled out** so the search isn't repeated: CC BY-SA 3.0/4.0 and GPL 3.0 assets (including the large LPC terrain set) are one-way compatible with GPL **v3**, and this project is **GPL v2**.
+**Status:** **3049 tests green**, **CI green both jobs**. Pushed.
+**Changed:** 18 square tiles + imports, `tools/build_topdown_terrain.py` + `tools/cc0-ground/` (CC0 inputs committed so it runs offline), `MapView.cs` (native-square path + fallback), `DocsCaptureTests.cs` (top-down capture), `ColonyArtTests.cs` (+1), `visual-identity.md`, `PROVENANCE.md`, `CREDITS.md`, before/after screenshots.
+**Decisions:** square tiles only for top-down (a photographic tile would look wrong in iso, so iso keeps the re-toned FreeCol art); two variants per terrain; ocean left alone.
+**Scheduled next:** **top-down forest and hills.** They still draw as *shrunk isometric side-view sprites floating on the tile* — from above they should be canopy. That's now the most obviously wrong thing left in the main view, ahead of buildings.
+**Follow-ups:** buildings, then units; Australian visual goldens.
+**Needs you:** a look at the two screenshots. The desert is still flatter than the rest — say if you want more texture or a different red.
+
+---
+
 ## 2026-07-26 — Terrain: sourcing tried and rejected, then re-toned; before/after captured
 
 **Requested (Chris):** try sourcing individual pieces **first**, then re-tone; terrain → buildings → units; and provide a before/after screenshot from inside the game for visual inspection.
