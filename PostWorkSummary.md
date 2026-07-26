@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-26 — Whole continent + three terrain styles to choose from; two real bugs found
+
+**Requested (Chris):** the terrain looks really ugly; show the entire view of Australia; find 2–3 alternative terrain styles to compare and pick from.
+**Did:**
+- **Whole-continent capture** (new `CAPTURE_WHOLEMAP=1` mode — zooms out two steps and centres the 60×40 grid). Australia is immediately recognisable: red centre, green east coast, arid west.
+- **Three styles, same ground, captured identically** so it's a fair comparison: **A photographic** (the CC0 scans — the ugly one; real grain averaged down to 64px becomes noise, not detail), **B flat** (near-solid Australian colour per terrain, board-game legibility), **C soft** (same palette, gentle mottling). Plus a close-up of C so it can be judged at play zoom, not just map zoom. `tools/terrain_style.py` builds B or C; **C is installed** pending Chris's pick.
+- **Found two real bugs of mine while zoomed out** — both invisible at close range:
+  1. The white patches Chris could see in central Australia were **FreeCol's snow tile**. The square-tile lookup used the `BaseFor` *mapped* ground, and `BaseFor` maps `mountains` → `tundra` (the iso art draws mountains as an overlay on borrowed ground). Same bug meant **forest canopy tiles were never drawn at all** — and since I'd already suppressed the tree overlay, **forests were rendering as bare ground**. Lookup now tries the terrain's own name first.
+  2. Overlay suppression now keys on whether a square tile was actually *drawn*, not merely available for some borrowed ground.
+**Status:** **3049 tests green**, **CI green both jobs**. Pushed `96c89e5`.
+**Changed:** `tools/terrain_style.py` (new), 40 tiles in the soft style, `MapView.cs` (lookup order + suppression fix), `DocsCaptureTests.cs` (whole-map mode), `visual-identity.md`, four comparison screenshots.
+**Decisions:** kept all three pipelines rather than deleting the rejected one, so a style can be switched with one command; recommended **C (soft)** — B is very flat and may read as sterile at play zoom, C keeps some life without the mud.
+**Scheduled next:** Chris's style pick, then apply it and move to the remaining isometric **entities** (settlements, units, resource icons).
+**Follow-ups:** buildings and units art; Australian visual goldens; the button cluster is still visible in whole-map captures (cosmetic, capture-only).
+**Needs you:** **pick a style — A, B or C** (or "none of these"). Everything else is unblocked.
+
+---
+
 ## 2026-07-26 — Correction: the "before" image was isometric; ocean was still iso art
 
 **Requested (Chris):** "Those textures do not look correct in the new version, they are isometric still in the images you gave me."
