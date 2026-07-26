@@ -291,9 +291,10 @@ public partial class GameController : Node2D
         // WS1.3: the HUD chrome + theme caches built below load their art BEFORE the variant is resolved (NewGame/LoadFrom
         // set _variant, then StartGame sets the art root). Reset to the base (FreeCol) art root here so the chrome is
         // deterministic and classic byte-identical regardless of a prior in-process game's variant; StartGame then sets
-        // the correct root for the panels (portraits/sprites) opened after the game starts. Variant-aware CHROME/theme is
-        // deferred to the Australian-theme work (WS2.1) — the seam here makes the panel art variant-aware (WS1.4/WS2.4).
+        // the correct root for the panels (portraits/sprites) opened after the game starts. WS2.1 does the same for the
+        // THEME skin: the menu/dialog chrome starts classic so the menu goldens are untouched, and StartGame re-tones it.
         ColonyArt.VariantArtRoot = null;
+        ColonyTheme.ActiveSkin = ColonyTheme.Skin.Classic;
         _mapView = GetNode<MapView>("MapView");
         _mapView.HoveredTileChanged += OnHoveredTileChanged; // tile-yield-on-hover preview (86d3fq1nk)
         _riverLayer = GetNode<RiverOverlay>("MapView/RiverLayer");
@@ -743,6 +744,9 @@ public partial class GameController : Node2D
         _game = game;
         _lastCongressCount = game.HumanPlayer.Congress.Count; // WS2.7: baseline the Congress size so a loaded game's existing figures don't re-fire the attained popup
         ColonyArt.VariantArtRoot = _variant.ArtRoot; // WS1.3: variant art wins where it exists, else FreeCol (both new-game + load reach here after _variant is set)
+        // WS2.1: re-tone the whole chrome for the variant. Australia gets the sun-bleached/jarrah/Federation-blue skin;
+        // classic keeps the original palette, so every existing visual golden is unaffected.
+        ColonyTheme.ActiveSkin = _variant.ArtRoot == "australia" ? ColonyTheme.Skin.Australia : ColonyTheme.Skin.Classic;
         _lastMapTopDown = MapView.TopDown; // baseline the map projection so a later live map-view toggle is detected
         _selectedUnit = null;
         _inspectedTile = null;

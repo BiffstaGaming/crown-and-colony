@@ -16,17 +16,108 @@ namespace CrownAndColony.Presentation;
 /// </remarks>
 public static class ColonyTheme
 {
-    // ── Palette (single tuning point) ───────────────────────────────────────────────────────────────────────
-    private static readonly Color Parchment = Color.FromString("#E8D9B0", Colors.Beige);
-    private static readonly Color ParchmentDark = Color.FromString("#D9C290", Colors.Beige);
-    private static readonly Color ParchmentEdge = Color.FromString("#C2A86A", Colors.Beige);
-    private static readonly Color WoodDark = Color.FromString("#4A2E1A", Colors.Brown); // borders
-    private static readonly Color WoodMid = Color.FromString("#7A4F30", Colors.Brown);   // button face
-    private static readonly Color WoodLight = Color.FromString("#9A6A42", Colors.Brown); // hover
-    private static readonly Color Ink = Color.FromString("#2B1D10", Colors.Black);        // body text on parchment
-    private static readonly Color InkTitle = Color.FromString("#3A2410", Colors.Black);
-    private static readonly Color Gold = Color.FromString("#C9A24B", Colors.Goldenrod);
-    private static readonly Color TextOnWood = Color.FromString("#F2E2C2", Colors.White);
+    /// <summary>
+    /// Which variant's visual skin the theme is built in (WS2.1). <see cref="Skin.Classic"/> is the parchment/European-oak
+    /// look every screen has had until now and is the default, so a classic game — and every existing visual golden — is
+    /// untouched. <see cref="Skin.Australia"/> re-tones the same design language for the Australian campaign.
+    /// </summary>
+    public enum Skin
+    {
+        /// <summary>The original parchment + European dark-oak palette. The default; classic goldens are captured against it.</summary>
+        Classic,
+
+        /// <summary>The Australian re-tone: sun-bleached paper, red-gum/jarrah timbers, Federation blue accent.</summary>
+        Australia,
+    }
+
+    /// <summary>
+    /// The active skin. Set once when a variant is chosen (beside <see cref="ColonyArt.VariantArtRoot"/>) and read by
+    /// <see cref="Get"/> / <see cref="GetInGame"/>. Assigning a different skin drops the cached themes so the next call
+    /// rebuilds — panels pick the new theme up on their next open.
+    /// </summary>
+    public static Skin ActiveSkin
+    {
+        get => _skin;
+        set
+        {
+            if (_skin != value)
+            {
+                _skin = value;
+                _cached = null;
+                _cachedInGame = null;
+            }
+        }
+    }
+
+    private static Skin _skin = Skin.Classic;
+
+    // ── Palette ─────────────────────────────────────────────────────────────────────────────────────────────
+    // Two tunings of ONE design language, not two designs: the same parchment-over-timber structure, re-toned. The
+    // Australian values are the WS2.1 art direction (docs/systems/visual-identity.md):
+    //   • paper is sun-bleached rather than European cream — the light is harsher here;
+    //   • timbers move from dark European oak to the red-brown of jarrah / red gum, the colonial building timbers;
+    //   • the metallic accent moves from gold to FEDERATION BLUE, the Southern Cross field — the campaign's own motif,
+    //     and the one colour that instantly separates an Australian screen from a FreeCol one.
+
+    private static Color Parchment => _skin == Skin.Australia
+        ? Color.FromString("#EDE0BC", Colors.Beige)   // sun-bleached paper
+        : Color.FromString("#E8D9B0", Colors.Beige);
+
+    private static Color ParchmentDark => _skin == Skin.Australia
+        ? Color.FromString("#DCC79A", Colors.Beige)
+        : Color.FromString("#D9C290", Colors.Beige);
+
+    private static Color ParchmentEdge => _skin == Skin.Australia
+        ? Color.FromString("#C6A874", Colors.Beige)
+        : Color.FromString("#C2A86A", Colors.Beige);
+
+    private static Color WoodDark => _skin == Skin.Australia
+        ? Color.FromString("#4A2118", Colors.Brown)   // jarrah — redder, less yellow than oak
+        : Color.FromString("#4A2E1A", Colors.Brown);
+
+    private static Color WoodMid => _skin == Skin.Australia
+        ? Color.FromString("#7E3F2C", Colors.Brown)   // red gum
+        : Color.FromString("#7A4F30", Colors.Brown);
+
+    private static Color WoodLight => _skin == Skin.Australia
+        ? Color.FromString("#9E5A3E", Colors.Brown)
+        : Color.FromString("#9A6A42", Colors.Brown);
+
+    private static Color Ink => _skin == Skin.Australia
+        ? Color.FromString("#2A1A12", Colors.Black)
+        : Color.FromString("#2B1D10", Colors.Black);
+
+    private static Color InkTitle => _skin == Skin.Australia
+        ? Color.FromString("#382012", Colors.Black)
+        : Color.FromString("#3A2410", Colors.Black);
+
+    /// <summary>The accent used for focus rings, title halos and pressed text — gold for classic, Federation blue for Australia.</summary>
+    private static Color Gold => _skin == Skin.Australia
+        ? Color.FromString("#2E5C8A", Colors.SteelBlue) // Southern Cross field
+        : Color.FromString("#C9A24B", Colors.Goldenrod);
+
+    private static Color TextOnWood => _skin == Skin.Australia
+        ? Color.FromString("#F4E7CC", Colors.White)
+        : Color.FromString("#F2E2C2", Colors.White);
+
+    // ── The six colony regions (WS2.1) ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A distinguishable colour per Federation colony region — the design's "six distinguishable colony-region colours".
+    /// Chosen to stay legible side by side on parchment (no two adjacent hues) and to sit in the same muted, period range
+    /// as the rest of the palette rather than reading as modern flat UI. Keyed by <c>Region.Key</c>; an unknown region
+    /// falls back to the neutral timber tone, so this can never throw on a variant that adds regions.
+    /// </summary>
+    public static Color ColonyRegionColor(string regionKey) => regionKey switch
+    {
+        "model.region.newSouthWales" => Color.FromString("#2E5C8A", Colors.SteelBlue),   // Federation blue
+        "model.region.victoria" => Color.FromString("#3F6B4A", Colors.DarkSeaGreen),     // bush green
+        "model.region.queensland" => Color.FromString("#8A5A2E", Colors.Sienna),         // maroon-brown
+        "model.region.southAustralia" => Color.FromString("#A03A2E", Colors.IndianRed),  // ochre red
+        "model.region.tasmania" => Color.FromString("#4A6E74", Colors.CadetBlue),        // cool island slate
+        "model.region.westernAustralia" => Color.FromString("#B8862E", Colors.DarkGoldenrod), // goldfields
+        _ => Color.FromString("#7A4F30", Colors.Brown),
+    };
 
     /// <summary>The bundled UI font (SIL OFL — see <c>assets/fonts/PROVENANCE.md</c>); loaded if present, else the engine default.</summary>
     private const string UiFontPath = "res://assets/fonts/Cardo-Regular.ttf";

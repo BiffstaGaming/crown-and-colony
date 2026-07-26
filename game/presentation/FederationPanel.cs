@@ -308,11 +308,25 @@ public partial class FederationPanel : PanelContainer
         var row = new HBoxContainer { Name = $"Region_{ShortKey(regionKey)}" };
         row.AddThemeConstantOverride("separation", 10);
 
+        // WS2.1: a colour swatch per colony, so the six regions are distinguishable at a glance rather than six
+        // identical rows differing only by their label — the design's "six distinguishable colony-region colours".
+        var swatchBox = new StyleBoxFlat { BgColor = ColonyTheme.ColonyRegionColor(regionKey), BorderColor = WoodDark };
+        swatchBox.SetBorderWidthAll(1);
+        swatchBox.SetCornerRadiusAll(2);
+        var swatch = new PanelContainer
+        {
+            Name = $"Swatch_{ShortKey(regionKey)}",
+            CustomMinimumSize = new Vector2(10, 18),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+        };
+        swatch.AddThemeStyleboxOverride("panel", swatchBox);
+        row.AddChild(swatch);
+
         row.AddChild(new Label
         {
             Name = "Name",
             Text = display,
-            CustomMinimumSize = new Vector2(140, 0),
+            CustomMinimumSize = new Vector2(130, 0),
             VerticalAlignment = VerticalAlignment.Center,
         });
 

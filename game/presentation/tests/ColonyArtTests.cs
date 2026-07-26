@@ -112,4 +112,62 @@ public class ColonyArtTests
             ColonyArt.VariantArtRoot = prev;
         }
     }
+
+    // ─────────────────────────── WS2.1 — the Australian visual skin ───────────────────────────
+
+    /// <summary>
+    /// WS2.1: the theme is a <b>re-tone of one design language</b>, not two designs — switching the skin must actually
+    /// change the palette (otherwise the whole art direction is a no-op), while leaving the structure intact.
+    /// </summary>
+    [TestCase]
+    public void AustralianSkin_RetonesTheTheme_AndClassicIsUnchanged()
+    {
+        ColonyTheme.Skin prev = ColonyTheme.ActiveSkin;
+        try
+        {
+            ColonyTheme.ActiveSkin = ColonyTheme.Skin.Classic;
+            Color classicButton = ColonyTheme.Get().GetColor("font_pressed_color", "Button");
+            Godot.StyleBox classicNormal = ColonyTheme.Get().GetStylebox("normal", "Button");
+
+            ColonyTheme.ActiveSkin = ColonyTheme.Skin.Australia;
+            Color australiaButton = ColonyTheme.Get().GetColor("font_pressed_color", "Button");
+            Godot.StyleBox australiaNormal = ColonyTheme.Get().GetStylebox("normal", "Button");
+
+            // The accent moves from gold to Federation blue — the single clearest tell that a screen is Australian.
+            AssertThat(australiaButton.B > australiaButton.R).IsTrue();  // blue-dominant
+            AssertThat(classicButton.R > classicButton.B).IsTrue();      // gold is red/warm-dominant
+            // …but the structure is the same design: both skins still register a wood button box.
+            AssertThat(classicNormal).IsNotNull();
+            AssertThat(australiaNormal).IsNotNull();
+
+            // Switching back must restore the classic palette exactly — the goldens depend on it.
+            ColonyTheme.ActiveSkin = ColonyTheme.Skin.Classic;
+            AssertThat(ColonyTheme.Get().GetColor("font_pressed_color", "Button")).IsEqual(classicButton);
+        }
+        finally
+        {
+            ColonyTheme.ActiveSkin = prev;
+        }
+    }
+
+    /// <summary>WS2.1: each of the six Federation colonies gets its own colour, and no two collide — six identical rows would defeat the point.</summary>
+    [TestCase]
+    public void EachColonyRegion_HasADistinctColour()
+    {
+        string[] regions =
+        [
+            "model.region.newSouthWales", "model.region.victoria", "model.region.queensland",
+            "model.region.southAustralia", "model.region.tasmania", "model.region.westernAustralia",
+        ];
+
+        var seen = new System.Collections.Generic.HashSet<string>();
+        foreach (string region in regions)
+        {
+            Color c = ColonyTheme.ColonyRegionColor(region);
+            AssertThat(seen.Add(c.ToHtml())).OverrideFailureMessage($"{region} duplicates another colony's colour").IsTrue();
+        }
+
+        // An unknown region must fall back rather than throw (a variant may add regions later).
+        AssertThat(ColonyTheme.ColonyRegionColor("model.region.nowhere")).IsNotNull();
+    }
 }
