@@ -450,6 +450,94 @@ public class DocsCaptureTests
         await CapturePanel(runner, controller, "australia-william-barak");
     }
 
+    // ── Australian terrain before/after capture (WS2.4/2.5 art work) ──────────────────────────────────────
+    // Not a golden: a deliberate, reproducible side-by-side so the terrain art can be eyeballed off-machine. The
+    // framing is COMPUTED, not hand-picked — it centres on the most terrain-varied spot on the (deterministic)
+    // Australia map, so a "before" and an "after" shot frame exactly the same ground and the comparison is honest.
+    // Run with DOCS_CAPTURE=1 and CAPTURE_NAME=<file> to control the output name.
+
+    [TestCase(Timeout = 120000)]
+    public async Task Capture_AustraliaTerrain()
+    {
+        if (!Enabled) return;
+        ISceneRunner runner = ISceneRunner.Load("res://scenes/main.tscn");
+        var controller = (GameController)runner.Scene();
+        controller.GetWindow().Size = Big; // more ground on screen = a more useful comparison
+
+        SetVariant(controller, GameLogic.Specification.GameVariants.Australia);
+        controller.StartNewGame(Seed, GameLogic.World.WorldSizeOptions.DefaultSize, GameLogic.World.WorldSizeOptions.DefaultLandMass,
+            GameLogic.Specification.DifficultyLevels.Default, GameLogic.World.MapSource.Australia);
+        await runner.SimulateFrames(2);
+
+        // Reveal the whole map — fog would hide the very thing we are photographing. Setting the flag is not enough:
+        // the map layers only re-read the explored/visible sets on a refresh, so drive one.
+        controller.GetType().GetField("_revealAll", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(controller, true);
+        controller.GetType().GetMethod("RefreshView", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(controller, null);
+        await runner.SimulateFrames(3);
+
+        Game game = GameOf(controller);
+        GameLogic.World.Position focus = MostVariedTile(game);
+        GD.Print($"[DOCS_CAPTURE] Australia terrain focus tile = {focus.X},{focus.Y}");
+        controller.GetNode<CameraController>("Camera").CenterOn(MapView.TileCentre(focus));
+        await runner.SimulateFrames(6);
+
+        // Drop the floating HUD chrome AND the action-button column so the shot is terrain, not UI. The camera move
+        // must happen before this (RefreshView re-shows some chrome), hence the ordering here.
+        string[] chrome =
+        [
+            .. MapChrome,
+            "UI/EndTurnButton", "UI/EuropeButton", "UI/ColopediaButton", "UI/DiplomacyButton",
+            "UI/MessageLogButton", "UI/HighScoresButton", "UI/IndependenceButton", "UI/ReportsButton",
+            "UI/TradeRoutesButton", "UI/FederationButton",
+        ];
+        foreach (string path in chrome)
+        {
+            if (controller.GetNodeOrNull<CanvasItem>(path) is { } node) node.Visible = false;
+        }
+        await runner.SimulateFrames(2);
+
+        Save(controller, System.Environment.GetEnvironmentVariable("CAPTURE_NAME") ?? "australia-terrain");
+    }
+
+    /// <summary>
+    /// The map tile whose surrounding window holds the most <b>distinct</b> terrain types — the framing that shows the
+    /// terrain palette against itself rather than one biome filling the screen. Deterministic (fixed scan order), so
+    /// the before and after shots frame identical ground.
+    /// </summary>
+    private static GameLogic.World.Position MostVariedTile(Game game)
+    {
+        const int window = 7; // roughly what fits on screen at this zoom
+        var best = new GameLogic.World.Position(game.Map.Width / 2, game.Map.Height / 2);
+        int bestScore = -1;
+        for (int y = window; y < game.Map.Height - window; y += 2)
+        {
+            for (int x = window; x < game.Map.Width - window; x += 2)
+            {
+                var kinds = new System.Collections.Generic.HashSet<string>();
+                int land = 0;
+                for (int dy = -window; dy <= window; dy++)
+                {
+                    for (int dx = -window; dx <= window; dx++)
+                    {
+                        var p = new GameLogic.World.Position(x + dx, y + dy);
+                        if (!game.Map.InBounds(p)) continue;
+                        GameLogic.Specification.TerrainType t = game.Map.TerrainAt(p);
+                        kinds.Add(t.Id);
+                        if (!t.IsWater) land++;
+                    }
+                }
+                // Favour variety, but require the frame to be mostly land — an ocean-heavy frame shows nothing.
+                if (land < (window * 2 + 1) * (window * 2 + 1) / 2) continue;
+                if (kinds.Count > bestScore)
+                {
+                    bestScore = kinds.Count;
+                    best = new GameLogic.World.Position(x, y);
+                }
+            }
+        }
+        return best;
+    }
+
     private static Game GameOf(GameController controller) =>
         (Game)controller.GetType().GetField("_game", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(controller)!;
 

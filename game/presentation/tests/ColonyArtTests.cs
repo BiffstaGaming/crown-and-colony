@@ -170,4 +170,39 @@ public class ColonyArtTests
         // An unknown region must fall back rather than throw (a variant may add regions later).
         AssertThat(ColonyTheme.ColonyRegionColor("model.region.nowhere")).IsNotNull();
     }
+
+    // ─────────────────────────── WS2.5 — the map's terrain goes through the variant seam ───────────────────────────
+
+    /// <summary>
+    /// <b>The bug this guards.</b> <see cref="MapView"/> loaded its terrain with a hard-coded
+    /// <c>res://assets/freecol/</c> path, so the map — by far the largest art surface in the game — silently bypassed
+    /// the WS1.3 variant art seam. Australian terrain art could be supplied in full and the map would still draw the
+    /// FreeCol tiles. Terrain now loads through <see cref="ColonyArt.LoadTexture"/> like everything else.
+    /// </summary>
+    [TestCase]
+    public void TerrainArt_ResolvesThroughTheVariantSeam_NotAHardCodedFreeColPath()
+    {
+        string? prev = ColonyArt.VariantArtRoot;
+        try
+        {
+            // The Australian terrain exists, so the seam must return it — not the FreeCol original.
+            ColonyArt.VariantArtRoot = "australia";
+            AssertThat(Godot.ResourceLoader.Exists("res://assets/australia/terrain/desert/center0.png"))
+                .OverrideFailureMessage("the Australian desert tile is missing — the re-tone output was not committed/imported").IsTrue();
+            AssertThat(ColonyArt.LoadTexture("terrain/desert/center0.png")).IsNotNull();
+            AssertThat(ColonyArt.LoadTexture("forest/broadleaf/broadleaf.png")).IsNotNull();
+
+            // Classic still resolves the FreeCol originals — the seam falls back, it does not redirect.
+            ColonyArt.VariantArtRoot = null;
+            AssertThat(ColonyArt.LoadTexture("terrain/desert/center0.png")).IsNotNull();
+
+            // A terrain Australia deliberately does NOT re-tone still resolves (falls back to FreeCol) under both roots.
+            ColonyArt.VariantArtRoot = "australia";
+            AssertThat(ColonyArt.LoadTexture("terrain/ocean/center0.png")).IsNotNull();
+        }
+        finally
+        {
+            ColonyArt.VariantArtRoot = prev;
+        }
+    }
 }

@@ -747,6 +747,9 @@ public partial class GameController : Node2D
         // WS2.1: re-tone the whole chrome for the variant. Australia gets the sun-bleached/jarrah/Federation-blue skin;
         // classic keeps the original palette, so every existing visual golden is unaffected.
         ColonyTheme.ActiveSkin = _variant.ArtRoot == "australia" ? ColonyTheme.Skin.Australia : ColonyTheme.Skin.Classic;
+        // WS2.5: the map loads its terrain in _Ready — BEFORE the variant is known — so re-pull it now that the art root
+        // is set. Without this the map silently keeps the FreeCol tiles however much variant terrain art exists.
+        _mapView.ReloadTerrainArt();
         _lastMapTopDown = MapView.TopDown; // baseline the map projection so a later live map-view toggle is detected
         _selectedUnit = null;
         _inspectedTile = null;

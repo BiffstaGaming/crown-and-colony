@@ -45,6 +45,32 @@ Bespoke Australian goods art is a WS2 art-pass follow-up.
 ---
 
 
+
+## Australian terrain + forest art (`terrain/`, `forest/`)
+
+**Derivative of our own FreeCol art — GPL v2 → GPL v2.** Every file here is `game/assets/freecol/<same path>` put through a
+**hue-rotation + saturation/value transform** in HSV; no pixel comes from anywhere else, so there is no new licence
+obligation and no attribution beyond the FreeCol credit the project already carries (© The FreeCol Team, GPL v2+).
+
+The transform is reproducible and is checked in as [`tools/retone_australian_terrain.py`](../../../tools/retone_australian_terrain.py)
+— **the script is the provenance**: re-running it regenerates these files byte-for-byte from the FreeCol originals, and
+the per-terrain numbers below are its tuning table. FreeCol's originals are never modified.
+
+| Terrain | Reads as | Why |
+|---|---|---|
+| desert | burnt red ochre | the red centre — the single most recognisable Australian landscape, and the FreeCol original is a pale beige, so it needs a large saturation lift |
+| grassland / plains / prairie | dry gold, straw | Australian pasture is bleached, not emerald |
+| savannah | ochre grass | the tropical north's dry season |
+| marsh / swamp | muted olive | |
+| hills / mountains | red-brown rock | |
+| broadleaf / mixed / conifer / boreal forest | dusty grey-green | **eucalypt**. The FreeCol originals already sit near 82° hue, so a hue change alone does nothing visible — what reads is dropping saturation |
+| scrub forest | driest grey-green | mallee |
+| tropical / rain forest | still genuinely green | the far north really is |
+| ocean, high seas, arctic, tundra, unexplored | **untouched** | the sea is the sea, and the polar tiles never appear on the Australia map |
+
+**Honest limitation:** this changes *colour*, not *silhouette*. A re-toned pine is still a pine. Distinctly Australian
+shapes are a separate job.
+
 ## WS6.2 expert-unit icons (`units/<shortName>.png`)
 
 Interim placeholders for the five Australian expert workers added with WS6.2, copied unmodified from our own FreeCol

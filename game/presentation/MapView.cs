@@ -97,7 +97,21 @@ public partial class MapView : Node2D
     /// </summary>
     private RoutePreviewOverlay? _routeOverlay;
 
-    public override void _Ready()
+    /// <summary>
+    /// Re-pulls every terrain / overlay texture through the variant art seam. <see cref="_Ready"/> runs <b>before</b> the
+    /// host knows which variant is being played, so the first load is always the FreeCol fallback; the host calls this
+    /// once it has set <see cref="ColonyArt.VariantArtRoot"/> (WS2.5). A no-op-shaped call: safe to call repeatedly.
+    /// </summary>
+    public void ReloadTerrainArt()
+    {
+        _bases.Clear();
+        _overlays.Clear();
+        LoadTerrainArt();
+        QueueRedraw();
+    }
+
+    /// <summary>Pulls every terrain base + overlay texture through the variant art seam. Split out of <see cref="_Ready"/> so <see cref="ReloadTerrainArt"/> can re-run it once the variant is known.</summary>
+    private void LoadTerrainArt()
     {
         foreach (string name in new[]
         {
@@ -114,10 +128,18 @@ public partial class MapView : Node2D
             var textures = new List<Texture2D>();
             foreach (string file in files)
             {
-                textures.Add(GD.Load<Texture2D>($"res://assets/freecol/{file}"));
+                if (ColonyArt.LoadTexture(file) is { } tex) // variant-first, FreeCol fallback (WS1.3)
+                {
+                    textures.Add(tex);
+                }
             }
             _overlays[name] = [.. textures];
         }
+    }
+
+    public override void _Ready()
+    {
+        LoadTerrainArt();
 
         foreach (string resource in new[]
         {
@@ -129,15 +151,21 @@ public partial class MapView : Node2D
         }
     }
 
+    /// <summary>
+    /// Loads a terrain's numbered variants (<c>center0.png</c>, <c>center1.png</c>) <b>through the variant art seam</b>
+    /// (<see cref="ColonyArt.Load"/>), so an Australia game gets <c>res://assets/australia/…</c> where it exists and
+    /// falls back to the FreeCol original per file. This used to hard-code <c>res://assets/freecol/</c>, which meant the
+    /// map — by far the largest art surface in the game — silently bypassed the WS1.3 seam and could never show variant
+    /// terrain however much art was supplied.
+    /// </summary>
     private static Texture2D[] LoadVariants(string prefix)
     {
         var variants = new List<Texture2D>();
         for (int i = 0; i < 2; i++)
         {
-            string path = $"res://assets/freecol/{prefix}{i}.png";
-            if (ResourceLoader.Exists(path))
+            if (ColonyArt.LoadTexture($"{prefix}{i}.png") is { } tex)
             {
-                variants.Add(GD.Load<Texture2D>(path));
+                variants.Add(tex);
             }
         }
         return [.. variants];

@@ -221,6 +221,14 @@ public static class ColonyArt
     /// </summary>
     public static Texture2D? FatherPortrait(string fatherShortName) => Load($"fathers/{fatherShortName}.jpg");
 
+    /// <summary>
+    /// Loads an asset by its path relative to an art root, <b>through the variant seam</b>: the current variant's copy
+    /// wins where it exists, else the FreeCol original, else null. Public so <see cref="MapView"/> — which loads terrain
+    /// directly rather than through the typed helpers — goes through the same seam as everything else (WS2.5).
+    /// </summary>
+    /// <param name="relativePath">Path under the art root, e.g. <c>terrain/desert/center0.png</c>.</param>
+    public static Texture2D? LoadTexture(string relativePath) => Load(relativePath);
+
     private static Texture2D? Load(string relativePath)
     {
         // A variant asset wins when it exists (WS1.3): res://assets/<variant>/<path>, else the FreeCol base art.
