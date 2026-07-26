@@ -19,6 +19,24 @@ A running, at-a-glance log of what Claude completed after each prompt / area of 
 
 ---
 
+## 2026-07-27 — SOURCED terrain art: four CC0 candidates for every terrain type
+
+**Requested (Chris):** "I wanted you to source terrain art that would work. SOURCE terrain art that could replace existing art tiles for Australia. Find FOUR replacements per terrain art type, then show me the results of each. DO NOT stop until you complete what I've asked."
+**Did — completed as asked:**
+- **Found the right library.** Poly Haven (CC0/public domain, GPL-v2-safe, no attribution obligation) carries **aerial and ground scans shot from directly above** — the correct viewpoint for top-down, which is what my earlier searches missed. It also has genuinely Australian material: `terrain_red_01`, `red_laterite_soil_stones`, `red_dirt_mud_01` for the red centre; `dry_ground_rocks`, `dry_mud_field_001`, `brown_mud_dry` for pastoral country; leaf-litter and forest floor for the wooded types; rock scans for relief.
+- **Four candidates for every terrain type** — 42 unique textures downloaded and cut. **Nothing re-tinted or generated**: these are the source textures cut to the 64px tile, so what's on screen is the art itself.
+- **Showed the results two ways:** a **contact sheet** with the four options per terrain, labelled with their source names, and **each complete set rendered on the whole continent** (sets 1–4) so they can be judged in situ. Set 3 installed.
+- **Switchable per set** — `python tools/install_sourced_terrain.py <1-4>`. Sources vendored already cut to 64px (~900 KB) so it runs offline; the 31 MB of 1K originals are deliberately not committed.
+- **Caught myself overwriting the sourced art**: the old build script wrote ground *and* canopy *and* water, so running it after an install silently clobbered the sourced tiles — the first four renders were of the wrong art. Split water generation into its own script and re-rendered.
+**Status:** **3049 tests green**, **CI green both jobs**. Pushed.
+**Changed:** `tools/install_sourced_terrain.py` + `tools/cc0-terrain/` (84 vendored tiles) + `tools/build_water_tiles.py` (all new), 36 installed tiles, `PROVENANCE.md` (full 4×14 candidate matrix), `CREDITS.md`, five comparison images.
+**Decisions:** vendor cut tiles rather than 1K originals (repo weight); crop-then-scale 8:1 rather than whole-image downscale (a 1K photo averaged to 64px destroys the grain and reads as mud); water stays generated and is stated as the one exception, since no CC0 library covers sea.
+**Scheduled next:** Chris's picks — he can choose per terrain, not just per set.
+**Follow-ups:** the remaining isometric **entities** (settlements, units, resource icons); buildings and unit art.
+**Needs you:** say which option number you want for each terrain — or a set number for all of them.
+
+---
+
 ## 2026-07-27 — Terrain, third attempt: changed the method, not the palette
 
 **Requested (Chris):** rejected all three earlier candidates — "those textures don't look very 'landy' or go well together."
